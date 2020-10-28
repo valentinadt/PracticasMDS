@@ -1,0 +1,236 @@
+---
+title: 'CP001: Regresión y Salarios NBA '
+author: "Valentina Díaz Torres"
+date: "October 28, 2020"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(MASS)
+library(readxl)
+library(WRS2)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(gvlma)
+library(car)
+library(fBasics)
+library(akima)
+require(lmtest)
+library(prettydoc)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introducción
+
+El fin de esta práctica "CP001: Regresión y Salarios NBA" es determinar el mejor modelo para predecir el salario de los jugadores de la NBA. Para ello se hará uso de la base de datos "nba.csv" proporcionada y se analizarán sus variables, descartando las menos significativas y formando un modelo con las que más aporten.
+
+
+
+
+### Datos
+
+```{r data}
+
+nba <- read.csv("nba.csv")
+attach(nba)
+data<- na.omit(nba)
+set.seed(1234)
+summary(nba)
+
+```
+## Selección de las variables
+
+### Generación del primer modelo
+
+Aquí se define el primer modelo llamado ***regres01***. En él, se recogen todas las variables cuantitativas, para poder estudiarlas todas en su conjunto.
+
+```{r data1}
+
+regres01 = lm(Salary~NBA_DraftNumber+Age+G+MP+PER+TS.+X3PAr+FTr+ORB.+DRB.+TRB.+AST.+STL.+BLK.+TOV.+USG.+OWS+DWS+WS+WS.48+OBPM+DBPM+BPM+VORP,data)
+
+anova(regres01)
+summary(regres01)
+#stepAIC(regres01, direction = "both") #resultado AIC: 14923.2
+
+
+```
+Del modelo se obtienen algunos resultados claros. En primer lugar, según el p-value de cada variable, no todas son significativas. Además, el objetivo de esta práctica es realizar una selección de las mejores variables, las más explicativas, por ello se ha realizdo la función stepAIC(), usando el método mixto, mediante la opción "both", para conseguir un resultado más acertado.
+### Modelo de Regresion 2
+
+Del estudio del modelo 1, se detecta que hay algunas variables que descartar, por lo que se realiza un segundo modelo, según los criterios comentados anteriormente.
+
+```{r data2}
+regres02<- lm(Salary ~ NBA_DraftNumber + Age + G + MP + PER + X3PAr + ORB. + TRB. + USG. + WS + OBPM, data = data)
+summary(regres02)
+gvlma(regres02)
+anova(regres02)
+vif(regres02) #problemas de multicolinealidad: PER, MP,G,OBPM
+vif(regres02) > 2
+BIC(regres01,regres02) #regres01 26 16425.94| regres02 13 16350.24
+
+
+```
+El modelo obtenido ha descartado algunas variables, reduciendo su número de 25 a 11. Aún así, valorando este modelo algunas de las variables que contiene, no tienen un alto nivel de significación, por lo que no serían relevantes para el mismo. Además, se ha detectado, mediante el estudio de la multicolinealidad, que había un problema entre estas, es por eso que se ha decidido descartar las no significativas, es decir aquellas que su p-value no era menor que 0.05, y las que su multicolinealidad era problemática, siendo esta mayor que 5. El nivel de representación de este modelo es del 0.543.
+
+### Modelo 3
+```{r data3}
+
+regres03<- lm(Salary ~ NBA_DraftNumber + Age+ TRB.+ WS, data = data)
+summary(regres03) 
+vif(regres03) 
+
+```
+
+En este tercer modelo se puede observar como el problema de la multicolinealidad ha sido solucionado. No obstante, hay un efecto inesperado. Este es que una variable más (TRB.) deja de ser significativa en este modelo. No fue previamente descartada porque tenía significancia media, pero con esta tercera comprobación se ha descubierto que finalmente no lo es.
+
+## Elección del modelo final, Modelo 4
+
+
+```{r data4}
+regres04<- lm(Salary ~ NBA_DraftNumber + Age+ WS, data = data)
+
+summary(regres04) 
+gvlma(regres04)
+vif(regres04) 
+
+
+```
+
+### Estudio de la normalidad y QQ-Plot
+```{r data5}
+
+qqPlot(regres04, labels=row.names(nba), id.method="identify", 
+       simulate=TRUE, main="Q-Q Plot")
+
+qqPlot(regres04, labels=row.names(nba), id.method="identify",
+       simulate=TRUE, main="Q-Q Plot")
+
+```
+Los valores se distribuyen en torno a la media, aunque también se aprecian algunos outliers.
+
+### Test de Jarque Bera
+
+```{r data6}
+vResid4=resid(regres04)
+jbTest(vResid4)
+
+```
+### Test de Shapiro-Wilk
+
+```{r data7}
+shapiro.test(vResid4)
+```
+### Test Durbin-Watson
+
+```{r data8}
+
+dwtest(regres04) 
+
+```
+### Linealidad
+
+```{r data9}
+crPlots(regres04)
+```
+### Estudio de los residuos
+
+```{r data10}
+
+residuos04<- residuals(regres04)
+
+hist(residuos04)
+
+residplot4 <- function(fit, nbreaks=10) {
+  z <- rstudent(fit)
+  hist(z, breaks=nbreaks, freq=FALSE,
+       xlab="Studentized Residual",
+       main="Distribution of Errors")
+  rug(jitter(z), col="brown")
+  curve(dnorm(x, mean=mean(z), sd=sd(z)),
+        add=TRUE, col="blue", lwd=2)
+  lines(density(z)$x, density(z)$y,
+        col="red", lwd=2, lty=2)
+  legend("topright",
+         legend = c( "Normal Curve", "Kernel Density Curve"),
+         lty=1:2, col=c("blue","red"), cex=.7)
+}
+
+residplot4(regres04)   
+
+```
+Los valores se distribuyen en torno a la normal, todos se encuentran dentro de la curva de la normal exceptuando el tramo entre -1 y 0
+
+### Interacción
+
+```{r data11}
+regresInter=lm(Salary~NBA_DraftNumber*Age*WS,data=nba) 
+
+```
+
+### Outliers y valores extremos
+
+```{r data12}
+outlierTest(regres03)
+hat.plot <- function(fit) {
+p <- length(coefficients(fit))
+n <- length(fitted(fit))
+plot(hatvalues(fit), main="Index Plot of Hat Values")
+abline(h=c(2,3)*p/n, col="red", lty=2)
+identify(1:n, hatvalues(fit), names(hatvalues(fit)))
+}
+hat.plot(regres04)
+
+
+```
+
+
+__Eliminación de outliers__
+
+```{r data13}
+#Salary
+
+boxplot.stats(nba$Salary)
+sal_out <- nba$Salary[nba$Salary < 23000000]
+boxplot.stats(sal_out)
+sal_out2 <- sal_out[sal_out < 17745894]
+boxplot.stats(sal_out2) 
+sal_out3 <- sal_out2[sal_out2 < 14275000]
+boxplot.stats(sal_out3)
+sal_out4 <- sal_out3[sal_out3 < 12584270]
+boxplot.stats(sal_out4) 
+sal_out5 <- sal_out4[sal_out4 < 11422536]
+boxplot.stats(sal_out5)  
+sal_out6 <- sal_out5[sal_out5 < 9821429]
+boxplot.stats(sal_out6)   
+sal_out7 <- sal_out6[sal_out6 < 8406000]
+boxplot(sal_out7, horizontal = TRUE)
+
+#NBA_DraftNumber
+boxplot(nba$NBA_DraftNumber , horizontal = TRUE)
+boxplot.stats(nba$NBA_DraftNumber)
+
+#WS
+boxplot.stats(nba$WS)
+ws_out <- nba$WS[nba$WS < 8.7]
+boxplot.stats(ws_out)
+ws_out1 <- nba$WS[nba$WS < 7.9]
+boxplot(ws_out1, horizontal = TRUE)
+boxplot.stats(ws_out1)
+
+
+```
+Se ha detectado la presencia de outliers en el modelo, es por eso, que mediante la selección del valor mínimo entre ellos, se han ido reduciendo, en el fin de conseguir la mayor precisión en el modelo final. En el boxplot resultante se puede observar la presencia de los mismos.
+
+## Conclusiones
+
+El modelo final obtenido, ha sido confeccionado, en primer lugar llevando a cabo una técnica de predicción mixta, es decir un híbrido, no solo siguiendo el método backward o forward, con el fin de obtener el modelo más preciso. Pero una vez que este ha sido obtenido, se ha visto necesario resolver problemas de significancias, proporcionados por el estimador p-value y de multicolinealidad, como los problemas mayores del modelo resultante por el proceso de predicción.
+
+Es por esto, que finalmente, se ha creado un modelo, ajustado, siguiendo tres criterios, con el objetivo de ser lo más preciso, pero también de proporcionar la mayor calidad de sus datos. 
+
+Tambén se ha sometido el modelo a otros estadísticos como el test de Shapiro-Wilk o se ha estudiado su normalidad. En todo ello, no se han descubierto valores negativos hacia el modelo, por lo cual se podría predecir que este podría ser un modelo válido para predecir el salario de los jugadores de la NBA. 
+
