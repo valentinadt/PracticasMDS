@@ -1,0 +1,176 @@
+---
+title: "CP03 GAM Model"
+author: "Valentina Díaz Torres"
+date: "11/8/2020"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+  html_document:
+    df_print: paged
+---
+
+## Introducción
+El objetivo es modelizar la relación entre la puntuación media (OSS) y el resto de variables, utilizando modelos de splines y GAM. Se debe realizar CV cuando se pueda.
+
+
+```{r , message=FALSE}
+library(tidyverse)
+library(broom) # modelos en df
+library(flextable) # Tablas formateadas
+library(mgcv) # estimar gam
+library(reshape2) # melt
+library(janitor) # Clean names
+library(skimr)
+library(here) # Comentar
+library(tidyverse)
+library(magrittr) # Pipe operators
+library(leaps) # Model selection
+library(rsample)
+library(shiny)
+library(gam)
+library(splines)
+
+
+```
+## Carga de datos
+```{r Read Data}
+pisa <- read.csv("pisasci2006.csv")
+colnames(pisa)
+
+```
+# limpieza de datos
+
+```{r Summarise Data}
+
+skim(pisa)
+# Eliminar na
+pisa %<>% drop_na()
+
+```
+
+```{r}
+
+#usamos el logaritmo de la variable dependiente, Overall
+pisa <- pisa%>% mutate(Overall = log(Overall))
+pisa_adj <- select(pisa, -Country, -Issues, -Explain, -Evidence)   #eliminar la variable cualitativa con la que no voy a trabajar y las otras tres, por no tener gran relevancia para el análisis que nos ocupa.
+
+```
+## Cross Validation
+
+```{r message=FALSE, warning=FALSE}
+
+pisa_split <- initial_split(pisa_adj, prop = 0.70, strata = "Overall") #division de la muestra en 2, 70% para training y el resto para test
+
+pisa_train <- training(pisa_split)
+pisa_test <- testing (pisa_split)
+
+pisa_train_x <- model.matrix(Overall~., pisa_train)[,-1]
+pisa_train_y <- log(pisa_train$Overall)
+
+pisa_test_x <- model.matrix(Overall~., pisa_test)[,-1]
+pisa_test_y <-  log(pisa_test$Overall)
+#dimension
+dim(pisa_train_x)
+```
+```{r}
+
+# Examinar el data frame
+head(pisa_adj)
+#comprobamos,cómo se distribuyen las distintas variables independientes con respecto de la dependiente, para comprobar linealidad y dispersión.
+
+ggplot(data = pisa_adj, mapping = aes(x = Overall, y = Overall)) +
+layer(geom = "point",stat = "identity",position = "identity") +
+theme_bw() + theme(legend.key = element_blank())
+
+ggplot(data = pisa_adj, mapping = aes(x = Interest, y = Overall)) +
+layer(geom = "point",stat = "identity",position = "identity") +
+theme_bw() + theme(legend.key = element_blank())
+
+ggplot(data = pisa_adj, mapping = aes(x = Support, y = Overall)) +
+layer(geom = "point",stat = "identity",position = "identity") +
+theme_bw() + theme(legend.key = element_blank())
+
+ggplot(data = pisa_adj, mapping = aes(x = Income, y = Overall)) +
+layer(geom = "point",stat = "identity",position = "identity") +
+theme_bw() + theme(legend.key = element_blank())
+
+ggplot(data = pisa_adj, mapping = aes(x = Health, y = Overall)) +
+layer(geom = "point",stat = "identity",position = "identity") +
+theme_bw() + theme(legend.key = element_blank())
+
+ggplot(data = pisa_adj, mapping = aes(x = Edu, y = Overall)) +
+layer(geom = "point",stat = "identity",position = "identity") +
+theme_bw() + theme(legend.key = element_blank())
+
+ggplot(data = pisa_adj, mapping = aes(x = HDI, y = Overall)) +
+layer(geom = "point",stat = "identity",position = "identity") +
+theme_bw() + theme(legend.key = element_blank())
+
+
+```
+
+En los gráficos se aprecia como todas las variables elegidas para el modelo, menos Overall se distribuyen de forma poco lineal, con valores bastante dispersos
+```{r}
+
+#Modelo lineal
+
+#Comprobamos el modelo lineal con la variable Edu, comparado con la variable dependiente, Overall
+
+lm_mod <- lm(Overall~Edu, data = pisa_adj)
+
+width(flextable(tidy(lm_mod)), width = 1.5)
+
+width(flextable(glance(lm_mod)), width = 1.5)
+      
+#visualización del modelo para verlo de forma más gráfica y apreciar su distribución.
+
+termplot(lm_mod, partial.resid = TRUE, se = TRUE)
+
+```
+La variable es poco lineal, como se apreció anteriormente, es decir los puntos no se encuentran pegados a la línea.
+
+## GAM
+
+### Modelo GAM 1
+
+Realizamos la primera muestra GAM utilizando todos los regresores que figuran en nuestro modelo utilizando como variable dependiente 
+'overall'
+
+```{r GAM, message=FALSE}
+
+#Modelo 1 GAM, con todos los splines de todas las variables del modelo
+
+gam_1 <- gam(Overall ~ s(Interest) +s(Support)+ s(Income) +s(Health) + s(Edu) + s(HDI), data = pisa_adj)
+
+#Utilizamos la función par con el parámetro mfrow para dividir la ventana gráfica en forma de matriz, y almacenar así en cada celda un gráfico diferente, siendo 1 el número de filas, y 2 el número de columnas en las cuales se va a dividir la ventana gráfica.
+
+par(mfrow = c(1,2))
+plot(gam_1, se=T, col='skyblue')
+
+summary(gam_1)
+
+```
+En primer lugar, aparecen como las variables más dependientes, teniendo en cuenta los splines, Interest, Support, Income y HDI.
+
+En segundo lugar, aparecen como las únicas variables un poco más dependientes, según anova, SUpport  y HDI. 
+
+### Modelo GAM 2
+
+Segundo modelo de GAM sin splines, para comprobar el cambio
+
+```{r GAM2}
+
+gam_2 <- gam(Overall ~ Interest +Support+ Income + Health + Edu + HDI, data = pisa_adj)
+
+par(mfrow = c(1,2))
+plot(gam_2, se=T, col='skyblue')
+summary(gam_2)
+
+```
+Pierden significancia algunas variables sin los splines y Health sigue sin ser significante según el test Anova
+
+## Conclusión
+
+Las variables estudiadas, en general se han distribuido con bastante dispersión. Mediante el uso del modelo GAM, se han podido afirmar esto mismo, pero además, el uso de los splines en este caso podría ser relevante porque a priori, las variables parecen no seguir una linealidad clara.
+
+Por eso mismo, este método reduciría la complejidad de la realización del modelo. Se puede apreciar en las gráficas con splines cómo ajustarían en cierto modo el modelo en la mejoría de significancia del ajuste.
