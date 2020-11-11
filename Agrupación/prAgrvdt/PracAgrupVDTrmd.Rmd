@@ -1,0 +1,324 @@
+---
+tittle: Estructura temporal (subyacente) de los tipos de interés.
+author: "Valentina Díaz torres"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE)
+
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+
+```{r libraries, message = FALSE}
+library(factoextra)
+
+library(FactoMineR)
+library(ggplot2)
+library(dplyr)
+library(MASS)
+library(readxl)
+library(WRS2)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(gvlma)
+library(car)
+library(fBasics)
+library(akima)
+require(lmtest)
+library(prettydoc)
+library(here) 
+library(tidyverse)
+library(janitor) 
+library(skimr) 
+library(magrittr) 
+library(corrplot) 
+library(ggcorrplot) 
+library(PerformanceAnalytics) 
+library(resample)
+library(glmnet)
+library(psych)
+library(rela)
+library(pls)
+library(imputeTS)
+library(reshape)
+library(corrplot)
+library(latexpdf)
+
+```
+
+## Introducción
+
+El objetivo que perseguimos en el presente trabajo es realizar un Análisis de Componentes Principales (ACP), de un conjunto de 878 observaciones, de los rendimientos de los bonos norteamericanos, a distintos plazos. Todo ello, entre el 2 de enero de 1995 y el 30 de septiembre de 1998.
+
+Con ello, se pretende verificar si se podría establecer una estructura que agrupe y resuma los distintos plazos en virtud de unas características comunes.
+
+Además, se pretende dar respuesta a las siguientes preguntas: 
+
+1. ¿Tiene sentido llevar a cabo, en este caso, un análisis de componentes principales? Para justificarlo, deberá llevar a cabo las pruebas que estime oportunas, como, por ejemplo el análisis de la matriz de correlaciones, el del determinante de dicha matriz, la prueba de esfericidad de Bartlett, el KMO o el MSA;
+
+2. ¿Cuántos componentes permitirían explicar, adecuadamente, la estructura subycente de los tipos de interés aquí analizados? Justifique su respuesta empleando, por ejemplo, las pruebas de la varianza explicada o del gráfico de sedimentación;
+
+3. Finalmente, ¿tiene sentido llevar a cabo una rotación de las variables subyacentes? Para responder, lleva a cabo una rotación Varimax, por ejemplo.
+
+
+
+### Carga de datos y lectura. Creación de una muestra y separación de la misma en las proporciones indicadas.
+```{r}
+
+#Carga de datos
+
+#lectura de toda la base de datos
+
+ACPTIUSD <- read.csv("ACPTIUSD.csv", sep = ";")
+
+#creación de una muestra y separar según las proporciones indicadas
+
+set.seed(1234)
+
+
+ACPTIUSD1 <- ACPTIUSD[0:949,1:9]
+
+
+
+
+```
+
+## EDA
+
+Se realiza un resumen de cómo ha quedado el data set, compuesto por 949 observaciones y 9 columnas, entre otra información. Además, los valores NA son sustituidos por la media, con el fin de no perder información en el análisis, ya que son una gran cantidad de valores NA.
+
+```{r}
+
+head(ACPTIUSD1)
+tail(ACPTIUSD1)
+
+names(ACPTIUSD1)
+
+head(ACPTIUSD1,3)
+
+str(ACPTIUSD1)
+
+skim(ACPTIUSD1) #observamos que quedan 949 observaciones y 9 columnas, entre otra información
+
+#colnames(ACPTIUSD) #comprobamos que hemos elegido adecuadamente las variables
+
+#limpieza de datos
+
+#Sustitución del valor de na por la media, con el fin de no perder información
+ACPTIUSD1 <- na_mean(ACPTIUSD1) 
+ACPTIUSD <- na_mean(ACPTIUSD) 
+
+
+#table(ACPTIUSD$X)
+
+#skim(ACPTIUSD) #Resumen de la base de datos con la que vamos a trabajar final, compuesta de 783 observaciones, eliminando los NA
+
+attach(ACPTIUSD1)
+
+```
+
+
+### Exploración de la distribución de las variables gráficamente
+
+
+```{r}
+#Observamos cómo se distribuyen las variables 
+
+scatterplotMatrix(ACPTIUSD1[,2:9]) 
+
+hist(ACPTIUSD1$DEPO.1M, freq = FALSE)
+curve(dnorm(x,
+       mean = mean(ACPTIUSD1$DEPO.1M),
+       sd = sd(ACPTIUSD1$DEPO.1M)),
+       add=TRUE, col="red")
+
+hist(ACPTIUSD1$DEPO.3M, freq = FALSE)
+curve(dnorm(x,
+       mean = mean(ACPTIUSD1$DEPO.3M),
+       sd = sd(ACPTIUSD1$DEPO.3M)),
+       add=TRUE, col="blue")
+
+hist(ACPTIUSD1$DEPO.6M, freq = FALSE)
+curve(dnorm(x,
+       mean = mean(ACPTIUSD1$DEPO.6M),
+       sd = sd(ACPTIUSD1$DEPO.6M)),
+       add=TRUE, col="yellow")
+
+hist(ACPTIUSD1$DEPO.12M, freq = FALSE)
+curve(dnorm(x,
+       mean = mean(ACPTIUSD1$DEPO.12M),
+       sd = sd(ACPTIUSD1$DEPO.12M)),
+       add=TRUE, col="orange")
+
+hist(ACPTIUSD1$IRS.2Y, freq = FALSE)
+curve(dnorm(x,
+       mean = mean(ACPTIUSD1$IRS.2Y),
+       sd = sd(ACPTIUSD1$IRS.2Y)),
+       add=TRUE, col="green")
+
+hist(ACPTIUSD1$IRS.3Y, freq = FALSE)
+curve(dnorm(x,
+       mean = mean(ACPTIUSD1$IRS.3Y),
+       sd = sd(ACPTIUSD$IRS.3Y)),
+       add=TRUE, col="purple")
+
+hist(ACPTIUSD1$IRS.4Y, freq = FALSE)
+curve(dnorm(x,
+       mean = mean(ACPTIUSD1$IRS.4Y),
+       sd = sd(ACPTIUSD1$IRS.4Y)),
+       add=TRUE, col="brown")
+
+hist(ACPTIUSD1$IRS.5Y, freq = FALSE)
+curve(dnorm(x,
+       mean = mean(ACPTIUSD1$IRS.5Y),
+       sd = sd(ACPTIUSD1$IRS.5Y)),
+       add=TRUE, col="black")
+
+```
+
+
+# Análisis de Componentes Principales (ACP)
+
+
+### Correlaciones y varianzas
+
+En esta sección se hace un estudio de las correlaciones de las variables. La función prcomp muestra las varianzas para cada uno de los componentes principales. Se pueden observar la desviación  típica de cada uno, la proporción de la varianza y la proporción acumulativa.
+
+La mayor desviación típica(Sd) se encuentra en el PC1, y por tanto, mayor proporción de la varianza. En el resto de componentes son muyo más mayores, estando algunas mucho más cercanas a 0.
+
+Como la primera componente contiene casi toda la variabilidad de datos, se podría dedudir que se podrían eliminar el resto de variables del modelo y quedarnos con esta. No obstante, PC2, también tiene una variación mayor que el resto de componentes. por los que estas serían las mejores.
+
+
+```{r}
+
+modelo1_acp <-prcomp(ACPTIUSD1[,2:9], scale=FALSE) #la función prcomp muestra las varianzas para cada uno de los componentes
+summary(modelo1_acp) #comprobamos los componentes del modelo
+#se pueden observar la desviación típica de cada uno, la proporción de la varianza y la proporción acumulativa.
+#La mayor desviación típica(Sd) se encuentra en el PC1, y por tanto, mayor proporción de la varianza. En el resto de componentes son muyo más mayores, estando algunas mucho más cercanas a 0.
+#Como la primera componente contiene casi toda la variabilidad de datos, se podría dedudir que se podrían eliminar el resto de variables del modelo y quedarnos con esta. No obstante, PC2, también tiene una variación mayor que el resto de componentes. por los que estas serían las mejores.
+plot(modelo1_acp) #representación gráfica de las varianzas de los componentess
+```
+Para comprobar el resultado anterior, se repetirá el análisis de componentes principales, pero esta vez con la matriz de correlación, para ver si se obtienen el mismo que con la matriz de covarianzas. En este caso, tanto con la función prcom, como con el gráfico se aprecia como hay una mayor distribución entre los distintos componentes principales. 
+con este análisis se busca que la escala quede más homogeneizada. La mayores varianzas se encuentran ahora en los primeros 4 componentes principales, aunque el primer componente sigue tiendo una imporntante diferncia con el resto, en cuanto a varianza.
+
+```{r}
+
+modelo2_acp <-prcomp(ACPTIUSD1[,2:9], scale=T)
+summary(modelo2_acp)
+plot(modelo2_acp)
+
+
+
+```
+__Correlaciones y covarianzas entre las variables y matriz de correlación y parcial (la inversa de esta)__
+
+Teniendo en cuenta las matrices de correlación, así como el gráfico, las variables que tienen más correlación son IRS.2Y, IRS.3Y, IRS.4Y, IRS.5Y, entre ellas. Las de menor correlación son  esas mismas, con respecto a DEPO.1M Pero por lo general, se podría decir que este conjunto de variables están correlacionadas entre si. 
+
+```{r}
+#Correlaciones y covarianzas entre las variables
+
+cov(ACPTIUSD1[,2:9])
+cor(ACPTIUSD1[,2:9])
+
+#Matriz de correlación y matriz parcial (la inversa de esta)
+
+correlacion<-round(cor(ACPTIUSD1[,2:9]), 1) #matriz de correlacion
+correlacion
+
+invCorr <- solve(correlacion) #matriz parcial
+invCorr
+
+corrplot::corrplot(correlacion)
+
+
+```
+
+
+### Esfericidad de Barlett, KMO, MSA
+
+A continuación se realiza la prueba de esfericidad de Barlett, para comprobar si existen correlaciones entre las variables y si el análisis de los factores, por tanto, sería pertinente realizarlo.
+El test de Esfericidad de Barlet devuelve los valores de chi-square (26624), un valor de p-value de 0 (sería nivel máximo de significancia y df). El KMO se usa para estudiar la idoneidad de la matriz de correlaciones para el análisis factorial.
+
+Estos estadísticos, así como el gráfico de sedimentación, indican la cantidad de componentes o factores más optimas, como todos aquellos que estén por encima de 1, representado mediante una línea. En este caso, lo óptimo sería realizar 2 componentes principales, que corresponden a los dos puntos que se encuentran por encima de dicha línea.
+
+```{r}
+#Esfericidad de Barlett
+
+cortest.bartlett(cor(ACPTIUSD1[,2:9]),n=783)
+
+#devuelve los valores de chi-square (26624), un valor de p-value de 0 (sería nivel máximo de significancia y df)
+
+#Estimación del KMO para estudiar la idoneidad de la matriz de correlaciones para el análisis factorial
+KMO(cor(ACPTIUSD1[,2:9]))
+
+#Representación del gráfico de autovalor para el criterio de contraste de caída.
+
+#fa.parallel(ACPTIUSD1[,2:9]) 
+
+
+#Calculamos KMO con MSA para  determinar el número de factores.
+res <- paf(as.matrix(ACPTIUSD1[,2:9]))
+summary(res)
+
+#Gráfico de sedimentación
+scree(cor(ACPTIUSD1[,2:9])) 
+
+```
+
+Este gráfico representa las variables según el apc.
+
+```{r}
+#Representación de las variables, según el apc
+
+acp = PCA(ACPTIUSD1[,2:9], graph = TRUE)
+
+
+```
+## Predicción, teniendo en cuenta los bonos a 10 años (IRS.10Y)
+
+Primero se realiza una división de la muestra, en test y train. La parte de test utiliza de la observación 950 a la 978 y la de train todas las anteriores. Luego, se añaden observaciones suplementarias y se lleva acabo un estudio de las predicción del modelo creado. En este caso, se han utilizado para la fórmula, dos componentes principales, según el análisis ya realizado anteriormente.
+Según los datos obtenidos, se puede observar que el primer valor es 6.065 en IRS.10Y y la predicción de ese valor 6.1612, por loo que se podría deducir que está prediciendo bastante bien, ya que son valores bastante próximos.
+
+Tras eso se estudia el Test-MSE para conocer el error. El resultado obtenido ha sido de 0.01505.
+
+```{r}
+#división de la muestra
+
+ACPTIUSD.act.train=ACPTIUSD[1:949, 2:11]
+ACPTIUSD.sup.test=ACPTIUSD[950:978, 2:11] #añadimos observaciones  suplementarias
+
+mTrainPcr= pcr(formula = IRS.10Y~., data = ACPTIUSD.act.train, ncomp=2)#ncomp es el numero de componentes principales, que he observado que sería lo más óptimo la elección de dos
+summary(mTrainPcr)
+predict(mTrainPcr, newdata = ACPTIUSD.sup.test, ncomp =2)
+ACPTIUSD.sup.test #como se puede observar el primer valor es 6.065 en IRS.10Y y la predicción de ese valor 6.1612, por loo que se podría deducir que está prediciendo bastante bien, ya que son valores bastante próximos
+
+
+```
+__Test-MSE__
+
+```{r}
+#Realizar Test-MSE, para saber el error
+train_pred<- predict(mTrainPcr, newdata = ACPTIUSD.act.train, ncomp = 2)
+testMSE <- mean((train_pred - ACPTIUSD.act.train$IRS.10Y)^2)
+testMSE #el error obtenido es 0.01505
+
+
+```
+
+## Conclusiones
+
+Con el análisis de componentes principales (apc), se ha pretendido saber cuáles son el número mínimo de factores para representar una proporción máxima de la varianza, representada en las variables originales. La extracción de factores que se realiza en dicho análisis tiene como objetivo reducir los datos, basándose en las correlaciones entre las variables y en la varianza que estas explican. Por tanto, encontrar el número menor de variables, que no se han observado, es decir, los factores.
+
+Las variables relacionadas están altamente relacionadas entre ellas, por lo que habría indicios de que sí sería relevante  un análisis factorial o de componentes principales. 
+
+Según el resultado obtenido por el estadístico KMO  se podría decir que los valores más cercano a 1 son DEPO.12M e IRS.2y  e IRS.5y. Por tanto, indican la mayor relación entre las variables. Pero todas ellas obtienen unos valores cercano a 1, por lo que todas están bastante relacionadas. Es por eso, que tendría sentido hacer un análisis factorial de estas variables. Ningún valor de los obtenidos se encuentra por debajo del 0.4. Los valores de MSA completan los resultados encontrados por KMO, al ser unos datos igualmente altos.
+
+Mediante el Gráfico de Sedimentación, se ha comprobado que el número más óptimo de componentes serían 2. Además, analizando los componentes según su correlación y varianza, se puede apreciar como los mayores valores de varianza se han obtenido en el primer y segundo componente, lo cual ha coincidido con este gráfico.
+
+En cuanto a la predicción realizada, se podría concluir con que el modelo predice bastante bien, mediante el uso de dos componentes principales, ya que no hay una diferencia muy elevada entre 
