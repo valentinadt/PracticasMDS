@@ -1,0 +1,325 @@
+---
+title: "Practica_Clasificación_1"
+author: "Valentina Díaz Torres"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+## Introducción
+
+El objetivo de esta práctica es realizar los ejercicios 4 y 5 del fichero de Prácticas de la Semana 1, sobre regresión logística y el ejercicio 4, los apartados (i) y (iii) del ejercicio 4, con respecto a la semana dos, relacionada con análisis discriminante.
+
+
+
+```{r message=FALSE}
+library(foreign)
+library(nnet) # multinomial
+library(stargazer)
+library(ISLR)
+library(Deducer)
+library(pscl)
+library(wooldridge)
+library(MASS)
+library(ISLR)
+library(DAAG)
+library(pastecs)
+library(klaR)
+library(corrplot)
+
+```
+
+## Prácticas Semana 1
+
+### Ejercicio 4
+
+4.  La encuesta Wage del paquete ISLR contiene información sobre salarios y otras variables para un grupo de 3000 trabajadores hombres de la región Mid-Atlantic de USA.
+
+
+__(i)Construir un modelo de regresión logística para explicar la variable health de las variables age, race, education  y logwage__
+
+
+```{r warning=FALSE, include=FALSE}
+#lectura de datos de la encuesta Wage
+
+library(ISLR)
+str(Wage)
+attach(Wage)
+names(Wage)
+```
+
+
+```{r }
+#Construcción del modelo de regresión logística
+
+
+reg.logs <- glm(health ~ age + race + education + logwage, data=Wage, 
+                family=binomial(logit))
+
+# Datos residuales del modelo de regresión lineal simple (diferencia entre los datos observados de la variable dependiente y y los valores ajustados ŷ)
+
+head(reg.logs$residuals,20)
+
+#Medida de bondad de ajuste de un modelo lineal generalizado. 
+
+reg.logs$deviance
+
+#La desviación nula muestra qué tan bien se predice la variable de respuesta mediante un modelo que incluye solo la intersección
+
+head(reg.logs$null.deviance,20)
+
+head(reg.logs$coefficients,20)
+
+head(reg.logs$fitted.values,20)
+
+summary(reg.logs) #para resumir sus datos, valores mínimos, máximos, cuantiles, p-values, nivel de significancia, etc.
+
+
+```
+
+__(ii)Bondad de ajuste mediante test LR y pseudoR2 de McFadden__
+
+```{r}
+
+#Bondad de ajuste LR test
+
+#Generalizamos el modelo de regresión lineal con las variables health, age, race, education y logwage
+
+model_all <- glm(health ~ age + race + education + logwage, data=Wage, family = binomial(link = logit))
+
+summary(model_all)
+
+
+# Modelo de regresión lineal para la variable health
+
+model_health <- glm(health ~ 1, data=Wage, family = binomial(link = logit))
+
+#test anova
+anova(reg.logs,test="Chisq")
+
+# Odds
+
+exp(coef(model_all))
+
+# Intervalos de confianza
+
+confint(model_all)
+
+# Pseudo R2 McFadden 
+pR2(model_all)
+
+# McFadden = 0.05925
+
+# Calculo directo McFadden
+
+1-model_all$deviance/model_health$deviance 
+
+
+```
+
+__(iii)Matriz de confusión y curva ROC__
+
+
+```{r}
+
+#Matriz de confusión   
+
+fit.pred <- ifelse(model_all$fitted.values>0.5,1,0)
+tabla<-table(fit.pred, Wage$health)
+tabla
+(tabla[1,1]+tabla[2,2])/sum(tabla)
+
+#curva ROC
+
+model2 <- glm(health ~ age++race+education+logwage, data=Wage, family = binomial(link = logit))
+
+model2 <- glm(formula=health ~ age++race+education+logwage,data=Wage, family = binomial(link = logit), na.action=na.omit)
+rocplot(model2)
+
+#la curva aparece representada en negro
+
+```
+
+
+## Práctica 5
+
+
+El conjunto de datos happines, del paquete wooldridge, proporciona información sobre el nivel de felicidad de una muestra 17131 individuos encuestados entre 1994 y 2006. Los datos también incluyen información acerca de una serie de características sociodemográfica de los encuestados.
+
+__(i)Estimar el modelo de regresión lineal incluye como variable dependiente a la variable binaria vhappy, que toma valor 1 si el encuestado afirma ser muy feliz y 0 en el caso contrario, y como independientes la variables años de educación (educ), ingreso (income), mujer(female) y desempleado (unem10).__
+
+
+
+```{r}
+#modelo de regresión lineal
+
+modelo_RL <- glm(vhappy ~ educ + income + female + unem10, data = happiness,family=binomial)
+
+summary(modelo_RL)#resumen de los datos del modelo
+
+```
+
+__(ii) Estimar el modelo del apartado anterior por medio de regresión logística. Con las variables anteriores, seleccionar el mejor modelo mediantes stepAIC__
+
+
+```{r}
+
+#modelo de regresión y estimación AIC
+modelo_RL <- glm(vhappy ~ educ + income + female + unem10, data = happiness,
+                                 family = binomial(logit))
+#estudio de AIC
+modelo_RL_AIC <- stepAIC(modelo_RL, trace = TRUE) 
+#test anova
+modelo_RL_AIC$anova
+#resumen de los datos obtenidos
+summary(modelo_RL_AIC)
+
+```
+
+__(iii) Predecir con el modelo de regresión logística y con el modelo de regresión lineal la probabilidad de ser muy feliz de una mujer con 18 años de educación, que trabaja y tieen un intreso superior a 25000$ anuales (income=$25000 or more)__
+
+```{r}
+#Añadimos los parámetros que indica el enunciado para realizar el filtrado y guardarlos en una nueva variable.
+
+predict_RL <- data.frame(educ = 18, income = '$25000 or more', female = 1, unem10 = 0)
+
+predict <- predict(modelo_RL, newdata = predict_RL, type = 'response')
+
+predict
+
+
+```
+
+## Prácticas Semana 2
+
+4. El fichero de datos spam7. Los datos consisten en 4601 elementos de correo electŕonico,de los cuales 1813 elementos se identificaron como spam. El fichero contiene las siguientes variables:
+
+* crl.tot total length of words in capitals.
+* dollar number of occurrences of the $ symbol.
+* bang number of occurrences of the ! symbol.
+* money number of occurrences of the word ”money”.
+* n000 number of occurrences of the string ”000”.
+* make number of occurrences of the word ”make”.
+* yesno outcome variable, a factor with levels n not spam, y spam.
+
+
+__(i)  Realizar un an ́alisis descriptivo de las variables explicativas__
+
+```{r}
+#Lectura de datos del fichero de datos spam7
+
+spam7 <- spam7
+
+str(spam7)
+head(spam7)
+colnames(spam7) #el nombre de todas las columnas
+attach(spam7)
+#resumen de los datos y de sus variables.
+summary(spam7)
+stat.desc(spam7)
+hist(spam7$crl.tot,col = "pink",main = "crl.tot" )
+hist(spam7$dollar,col = "green",main = "dollar" )
+hist(spam7$bang,col = "skyblue",main = "bang" )
+hist(spam7$money,col = "salmon",main = "money" )
+hist(spam7$n000,col = "yellow",main = "n000" )
+hist(spam7$make,col = "purple",main = "make" )
+
+#Todas las variables se distribuyen de forma muy similar, solo crl.tot muestra una mayor distribución de frecuencia.
+
+
+```
+__(ii)  Comparar los modelos LR, LDA y QDA mediante la matriz de confusíon. Realizar gráficosd partición__
+
+Se realiza los modelos LR, LDA y QDA para las variable dependiente Yesno y el resto. Después estos son utilizados para las matrices de confusión. Por último se crea el gráfico de partición LDA y QDA para representar dicho análisis.
+
+```{r}
+
+#Modelo LR:
+
+modelo_LR <- glm(yesno ~., data = spam7, family = binomial(link = logit))
+result_LR <- predict(modelo_LR, newdata = spam7)
+
+#Modelo LDA:
+
+modelo_LDA <- lda(yesno ~., data = spam7) 
+
+modelo_LDA
+
+#Modelo QDA:
+
+modelo_QDA <- qda(yesno ~., data = spam7)  
+modelo_QDA
+
+#Matriz de Confusión LDA:
+
+result_LDA <- predict(modelo_LDA, newdata = spam7) 
+matrizLDA <- table(result_LDA$class, spam7$yesno)
+matrizLDA
+
+#Matriz de Confusión QDA:
+
+result_QDA <- predict(modelo_QDA, newdata = spam7) 
+matrizQDA <- table(result_QDA$class, spam7$yesno)
+matrizQDA
+
+#Gráfico de Partición LDA
+
+  graf_PartLDA <- partimat(yesno ~., data = spam7, method="lda",main="Gráfico de Partición",  col.correct="green",col.wrong = "red"
+
+, image.colors = c("darkgoldenrod1", "skyblue2"), col.mean = "firebrick") 
+
+#Gráfico de Partición QDA
+
+graf_PartQDA <- partimat(yesno ~., data = spam7, method="qda",image.colors = c("darkgoldenrod1", "snow2"),main="Gráfico de Partición")
+
+# % de precisión del modelo QDA
+sum(diag(matrizQDA))/sum(matrizQDA) #la precisión del modelo QDA. El resultado es de un 76% de precisión.
+
+
+# % de precisión del modelo LDA
+sum(diag(matrizLDA))/sum(matrizLDA) #la precisión del modelo LDA. El resultado obtenido es muy próximo al anterior, 76,52%
+
+
+```
+
+El color verde de estos gráficos representa el acierto y el rojo el error de cada una de las variables
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
