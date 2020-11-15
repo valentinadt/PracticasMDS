@@ -1,0 +1,209 @@
+---
+author: "Valentina Díaz Torres"
+title: "P2: análisis del voto"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+knitr::opts_chunk$set(warning=FALSE)
+```
+
+## Introducción
+
+El objetivo principal de esta práctica es analizar la base de datos de votos, que recoge 5 variables categóricas de los votantes de los diferentes partidos. Estas son trabaja, doméstico, parado, jubilado y estudiante, por lo que analizan la situación del votante. Por otro lado, los partidos recogidos son PP, PSOE, Unidas Podemos, Ciudadanos y una tercera columna que recoge otros partidos en general.
+
+Se pretende por tanto, conocer cuál es la relación entre el voto a los diferentes partidos, en función de las variables nombradas anteriormente, es decir de su situación laboral. No obstante, hay que tener claro que el objetivo principal es una reducción de las dimensiones. Para ellos, mediante diferentes tipos de análisis se medirán estas relaciones y se intentará reducir las dimensiones para mayor nivel explicativo.
+
+En este caso, no aplicaría realizar análisis de valores nulos, missing values, entre otros, ya que la base de datos es pequeña y se puede observar con claridad. No obstante sería conveniente hacer una exploración previa sobre cómo se distribuyen las variables entre ellas. Además, en esta práctica, no son solo relevantes las columnas, sino que también las filas, cómo se distribuyen filas y columnas en en un mapa dos dimensiones y cada una por separado. Es por ello, que por un lado se analizarán filas, por otro columanas y después quedarán representadas y estudiadas las relaciones.
+
+
+
+```{r libreries, message=FALSE}
+#cargar librerías
+library(readr)
+library(skimr)
+library(FactoMineR)
+library(factoextra)
+library(ggplot2)
+library(gplots)
+library(graphics)
+library(vcd)
+library(corrplot)
+```
+## Carga y trata de los datos
+
+La matriz de los datos, formando una tabla de contingencia quedaría así:
+
+```{r}
+#cargar los datos creando una matriz con la base de datos
+partidos<- read.csv("AFC-votos(1).csv", sep = ";")
+rownames(partidos)<-c("Trabaja","Doméstico","Parado","Estudiante","Jubilado")
+partidos <- partidos[,!(names(partidos)%in% "X")]
+partidos <- as.data.frame(partidos)
+#convertir los datos en tabla para poder trabajar con ella
+tabla <- as.table(as.matrix(partidos))
+tabla
+```
+
+El siguiente gráfico muestra la represtación de la tabla anteriormente creada. Como se puede observar, por un lado se encuentra el estado y por otro el partido, haciéndose el punto más grade en aquellos casos en los que hay más votos y más pequeño en los que menos. Se podría destacar que al PP lo votan más los jubilados, al PSOE el estado doméstico, UP parado, Cs queda bastante repartido y el resto más por estudiantes.
+
+
+```{r}
+
+balloonplot(t(tabla), main ="Partidos", xlab ="Partido", ylab="Estado",
+            label = FALSE, show.margins = FALSE)
+```
+
+
+## Contraste de independencia de Chi-cuadrado
+
+Esta prueba se realiza al principio del estudio con el fin de testear la independencia de las variables, para así hacer un análisis que tenga sentido. Basándonos en la p-value obtenida, muy próxima a 0, podríamos decir que la hipótesis de independencia del test de chi-cuadraado se rechaza. Por tanto, existiría relación entre las distintas variables de filas y columnas. Además, los grados de libertad son 16, esta cifra es el resultado del número de filas - 1 por el número de columnas - 1.
+
+```{r}
+chisq=chisq.test(partidos)
+
+chisq
+
+#grados de libertad
+gdl = (nrow(partidos) - 1) * (ncol(partidos) - 1)
+gdl
+
+
+```
+
+## Análisis de correspondencias
+
+Una vez que se ha demostrado que existe relación entre las variables, se pretende estudiar cuál es esta relación, tanto por separado, como juntas, en un mapa de dos dimensiones.
+
+Mediante la función CA se realiza un análisis de correspondencias entre las filas y columnas. Para ello se tienen en cuenta la tabla de datos partidos, y el número de componentes principales, que es 5.
+
+El gráfico anteior muestra la asociación entre las filas y las columnas, por ejemplo estudiantes y el resto, doméstico y PSOE, son casos claros, donde se encuentran muy cerca en la representación. Dividiendo en dos dimensiones. La primera recogería el 64,65% y la segunda el 24,25%, por lo que entre ambas se recogería un total del 89,91%.
+
+
+Del análisis de correspondencias se obtiene la siguiente información:
+
+
+```{r}
+partidos.afc=CA(partidos, graph=FALSE)
+fviz_ca_biplot(partidos.afc,  col.row = "purple", col.col = "blue")
+
+```
+
+
+Como la representación mostraba, en cuanto a la elección del número de dimensiones, no tendría sentido añadir una tercera dimensión. Con dos dimensiones ya queda representado el 89,10% y añadiendo una tercer aumentaría a 99,89 %, no obstante, pierde esta tercera dimensión en calidad de representación, basándonos en Cos2. Es por eso, que se ha decidido seguir adelante con tan solo 2 dimensiones. Esta tercera, sería necesario añadirla en el caso de que las dos anterioresno explicasen suficiente, pero con un 89,10% se ha cosiderado suficiente. También, cabe destacar, que donde más sentido quizá tendría aplicar esta tercera dimensión es en la explicación de los votos de ciudadanos, ya que el valor de cos " es de 0,603.
+
+
+```{r}
+summary(partidos.afc, nb.dec = 2, ncp = 2)
+#summary(partidos.afc, nb.dec = 3, ncp = 3)
+```
+
+
+En cuanto a los autovalores, estos miden sin hay una asociación entre filas y columnas. El resultado obtenido ha sido del 0.383, lo cual se considera como que existe una asociación. El umbral usado es del 0.2, por lo que un 0.38 representa una 
+asociación, aunque no excesivamente fuerte.
+
+
+```{r}
+autovalores = get_eigenvalue(partidos.afc)
+traza = sum(autovalores[,1]) 
+cor.coef = sqrt(traza)
+cor.coef
+
+
+
+```
+
+También se puede calcular el estadístico chi-cuadrado, para testear la hipótesis de independencia y si por tanto, tiene sentido o no seguir con el anális. El resultado en este caso sería de 1704.298,con un p-value de 0, lo que nos permitiría seguir con el estudio y rechazar la hipótesis de independencia.
+
+```{r}
+#Chi-cuadrado
+
+chi2 = traza*sum(as.matrix(partidos))
+chi2
+# Nivel de significación del estadístico de contraste p-valor
+
+pval = pchisq(chi2, df = gdl, lower.tail = FALSE)
+round(pval, 2)
+
+
+
+```
+
+
+## Autovalores y gráficos de sedimentación
+
+Sería necesario la realización de un examen de autovalores, con el fin de asegurarnos de que las dimensiones elegidas son las apropiadas. 
+
+Por ello, en primer lugar, se estudia la varianza explicada por cada una de las dimensiones. En este análisis se observa que el 100% de la variabilidad no se consigue hasta tener en cuenta las 4 dimensiones. No obstante, como ya se ha comentado anteriormente, con la segunda dimensión se obtiene el 89,10%, teniendo, la primera dimensión, un 64.5% y la segunda el 24.45%. La tercera y cuarta dimensión son el 10.79% de la varianza y el 0.11%, por lo que representarían una parte más pequeña de esta.
+
+
+```{r}
+autovalores = get_eigenvalue(partidos.afc)
+head(round(autovalores, 2))
+
+```
+
+Lo que se ha comentado anteriomente queda representado en la siguiente gráfica. Aquí se entiende, de una forma visual la importancia que tienen cada una de las dimensiones, siendo la 4 casi insignificante.
+
+
+```{r}
+#screeplot
+
+fviz_screeplot(partidos.afc) +
+  ggtitle("Gráfico de sedimentación") +
+  labs(x="Dimensiones",y="Porcentaje de varianza explicada")
+  
+```
+
+## Contribución de filas y columnas
+El fin de este apartado es conocer qué filas y columnas explican más las dos dimensiones elegidas.
+
+
+```{r}
+filas=get_ca_row(partidos.afc)
+filas
+
+
+```
+
+A continuación se muestra la contribución de cada fila con las dimensiones yla calidad de la representación (cos2) de cada una de ellas. De la dimensión 1, la que mayor calidad tiene es jubilado, seguido de estudiante y de la 2 parado, seguido de trabaja. Se podría concluir por tanto, que teniendo en cuenta la calidad de la representación estas son las filas más representativas o que más explican estas dos dimensiones. En cuanto a la contribución, se afirman lo obtenido en la calidad de la representación.
+
+```{r}
+head(filas$cos2)
+head(filas$contrib)
+```
+
+Para ver de forma más gráfica lo comentado anteriormente, podemos observar este gráfico, donde se representan gráficamente las contribuciones de cada dimensión.
+
+```{r}
+corrplot(filas$contrib, is.corr=FALSE)
+
+```
+
+En este gráfico se muestra la calidad de la representación de cada una de las filas, donde se aprecia que estudiante tiene la mayor calidad, seguido de trabaja.
+
+```{r}
+# Cos2 de las filas en las dos dimensiones
+fviz_cos2(partidos.afc, choice = "row", axes = 1:2)+
+        ggtitle("Cos2 de las dos dimensiones")+
+        labs(y="Cos2 - calidad de la representación")
+
+```
+## Representación conjunta de filas y columnas
+
+La siguiente representación, consiste en un gráfico asimétrico de filas y columnas juntas, donde a mayor ángulo, mayor desasociación y mientras más cerrado es este ángulo mayor asociación hay.
+
+
+```{r}
+fviz_ca_biplot(partidos.afc, map ="rowprincipal", arrow = c(TRUE, TRUEa), )+ 
+        ggtitle("Análisis de correspondencias simples. Gráfico asimétrico.") 
+```
+
+## Conclusión
+
+Como conclusión se ha decidido reducir las dimensiones a 2, teniendo en cuenta la calidad de la representación y la contribución de las variables. Una tercera dimensión solo tendría sentido en el caso de querer enfocarnos en el partido de Ciudadanos. Por lo tanto la explicación total conseguida ha sido de 89,10%. 
+Se ha podido descubrir de una forma clara y visual qué tipo de votantes están suelen ser los de cada partido. En algunos casos de ha visto de una forma muy clara, como los jubilados al PP o la parte doméstica al PSOE y en otros no tanto.
+
+
+
