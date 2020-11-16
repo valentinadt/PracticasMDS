@@ -1,0 +1,168 @@
+---
+title: 'Caso Práctico 04: Ventas Apple'
+author: "Valentina Díaz Torres"
+date: "15/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introducción
+
+El objetivo de esta práctica es predecir las ventas de Apple. Para ello se hará uso de una base de datos obtenida de Bloomberg, sobre los datros trimestrales del 2º trimestre de 2008 al tercer trimestre de 2017.
+
+Para ello será necesario calcular varios predictores e indicadores que nos permeitan cumplir con el objetivo. Habrá que estimar el modelo ETS y el modelo ARIMA que mejor prediga las ventas. Se dejarán fuera la estimación de los trimestres de 2017. Una vez que se tenga un modelo, se estimará  este para predecir las ventas de 2017 y 2018.
+
+
+```{r librerias}
+require(forecast)
+require(xts)
+require(ggplot2)
+
+```
+## Carga de datos 
+
+```{r}
+#carga de datos
+data <- read.csv2("./IngresosApple.csv")
+#renombrar los ingresos como ventas
+ventas0 <-data$Ingresos
+#manejar las fechas
+fechas <-seq(as.Date("2008/04/01"), as.Date("2017/07/01"), by = "quarter")
+```
+
+
+```{r}
+#crear un objeto XTS
+xVentas=xts(ventas0,order.by=fechas)
+#generar dato por trimestre
+xVentas=to.quarterly(xVentas)
+#transoformar las ventas en zoo datos
+zooVentas=as.zoo(xVentas$xVentas.Close)
+#cambiar el nombre
+names(zooVentas)= "Ventas"
+
+```
+A continuación se representa gráficamente, de dor formas diferentes las ventas trimestrales de Apple, a lo largo del tiempo estudiado.
+
+```{r}
+autoplot(zooVentas)+ylab("Ventas")+ggtitle("Ventas Trimestrales Apple")+xlab("Trimestres")
+```
+
+
+```{r}
+#Grafico de serie
+nueva <- data.frame(value = as.vector(zooVentas),
+                     time = time(zooVentas))
+ggplot(nueva)+geom_point(aes(x=time,y=value))+geom_line(aes(x=time,y=value))+ylab("Ventas")+ggtitle("Ventas Trimestrales APPLE")+xlab("Trimestres")
+
+
+```
+
+En el gráfico anterior se puede observar como la distribución de los datos nos indican que no existe una estacionalidad. Según qué cuatrimestre, estos van variando con mayores ventas en un estación, seguida de una caida y luego una subida de nuevo.
+
+Antes de llevar a cabo la elección del modelo, se ha visto necesario realizar algunas transformaciones y representaciones, con el fin de observar mejor las ventas.
+
+
+
+```{r}
+#diferencia
+
+zlogVentas=log(zooVentas)
+ggtsdisplay(zlogVentas)
+
+```
+
+
+
+```{r}
+ggtsdisplay(diff(zlogVentas))
+```
+
+```{r}
+ggtsdisplay(diff(zlogVentas,4))
+```
+
+```{r}
+ggtsdisplay(diff(diff(zlogVentas,4),1))
+```
+
+
+```{r}
+#seleccionar el número de observaciones para comparar forecast
+cOmit=3
+
+#Tamaño de los datos es igual a la longitud de zooVentas
+nObs=length(zooVentas)
+
+#submuestra
+oVentas <- window(zooVentas,start=index(zooVentas[1]),end=index(zooVentas[nObs-cOmit]))
+
+#datos reales para la actuación de forecast
+pVentas <- window(zooVentas,start=index(zooVentas[nObs-cOmit+1]),end=index(zooVentas[nObs]))
+```
+
+## Modelo ARIMA
+
+
+
+```{r}
+fit1=auto.arima(oVentas,lambda=0)
+summary(fit1)
+```
+
+```{r}
+#Análisis residuos
+ggtsdisplay(fit1$residuals)
+```
+
+```{r}
+#box-Ljung Test residuos lag =4
+
+Box.test(fit1$residuals,lag=4, fitdf=1, type="Lj")
+```
+```{r}
+#box-Ljung Test residuos lag =6
+Box.test(fit1$residuals,lag=6, fitdf=1, type="Lj")
+```
+
+```{r}
+fventas.arima=forecast(fit1)
+
+ggplot(nueva)+geom_point(aes(x=time,y=value))+geom_line(aes(x=time,y=value))+ geom_forecast(fventas.arima,alpha=0.4)+ggtitle("ARIMA: Predicción Apple")
+
+
+```
+
+```{r}
+fventas.arima
+```
+
+#ETS
+
+```{r}
+etsFit<-ets(oVentas,damped = TRUE)
+#forecast model
+fventas.ets=forecast(etsFit)
+#Results
+summary(fventas.ets)
+```
+
+```{r}
+#representación ARIMA Vs ETS
+
+#Plot
+ggplot(nueva)+geom_point(aes(x=time,y=value))+
+  geom_line(aes(x=time,y=value))+ 
+  geom_forecast(fventas.arima,color="red",alpha=0.183, plot.conf = FALSE)+
+  geom_forecast(fventas.ets,color="green", alpha=0.183,plot.conf = FALSE)+
+  ggtitle("ARIMA(red) vs ETS(green)")
+
+```
+
+```{r}
+
+```
+

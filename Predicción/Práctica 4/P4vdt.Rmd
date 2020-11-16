@@ -1,0 +1,205 @@
+---
+title: 'Caso Práctico 04: Ventas Apple'
+author: "Valentina Díaz Torres"
+date: "15/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introducción
+
+El objetivo de esta práctica es predecir las ventas de Apple. Para ello se hará uso de una base de datos obtenida de Bloomberg, sobre los datros trimestrales del 2º trimestre de 2008 al tercer trimestre de 2017.
+
+Para ello será necesario calcular varios predictores e indicadores que nos permeitan cumplir con el objetivo. Habrá que estimar el modelo ETS y el modelo ARIMA que mejor prediga las ventas. Se dejarán fuera la estimación de los trimestres de 2017. Una vez que se tenga un modelo, se estimará  este para predecir las ventas de 2017 y 2018.
+
+
+```{r librerias}
+require(forecast)
+require(xts)
+require(ggplot2)
+library(tseries)
+
+```
+## Carga de datos 
+
+```{r}
+#carga de datos
+data <- read.csv2("./IngresosApple.csv")
+#renombrar los ingresos como ventas
+ventas0 <-data$Ingresos
+#manejar las fechas
+fechas <-seq(as.Date("2008/04/01"), as.Date("2017/07/01"), by = "quarter")
+
+```
+
+
+```{r}
+#crear un objeto XTS
+xVentas=xts(ventas0,order.by=fechas) #para pasar los trimestres que están de tipo carácter a formato fecha
+#generar dato por trimestre
+xVentas=to.quarterly(xVentas) 
+#transoformar las ventas en formato zoo 
+zooVentas=as.zoo(xVentas$xVentas.Close)
+#cambiar el nombre
+names(zooVentas)= "Ventas"
+
+```
+A continuación se representa gráficamente, de dos formas diferentes las ventas trimestrales de Apple, a lo largo del tiempo estudiado.
+
+```{r}
+autoplot(zooVentas)+ylab("Ventas")+ggtitle("Ventas Trimestrales Apple")+xlab("Trimestres")
+```
+
+
+```{r}
+#Grafico de serie
+nueva <- data.frame(value = as.vector(zooVentas),
+                     time = time(zooVentas))
+ggplot(nueva)+geom_point(aes(x=time,y=value))+geom_line(aes(x=time,y=value))+ylab("Ventas")+ggtitle("Ventas Trimestrales APPLE")+xlab("Trimestres")
+
+
+```
+
+En el gráfico anterior se puede observar como la distribución de los datos nos indican que no existe una estacionalidad. Según qué cuatrimestre, estos van variando con mayores ventas en un estación, seguida de una caida y luego una subida de nuevo.
+
+Antes de llevar a cabo la elección del modelo, se ha visto necesario realizar algunas transformaciones y representaciones, con el fin de observar mejor las ventas.
+
+En el siguiente paso se realiza el logaritmo, para obtener una serie estacionaria en varianza, con lambda = 0. Se representa de diferentes modos.
+
+```{r}
+
+zlogVentas=log(zooVentas)
+ggtsdisplay(zlogVentas)
+
+```
+
+
+
+```{r}
+ggtsdisplay(diff(zlogVentas))
+```
+
+```{r}
+ggtsdisplay(diff(zlogVentas,4))
+```
+
+```{r}
+ggtsdisplay(diff(diff(zlogVentas,4),1))
+```
+
+A continuación se quitan los tres últimos trimestres de 2017 para poder predecir las ventas de 2017 y 2018.
+
+```{r}
+#seleccionar el número de observaciones para comparar forecast
+cOmit=3
+
+#Tamaño de los datos es igual a la longitud de zooVentas. Número de observaciones de Zooventas
+nObs=length(zooVentas)
+
+#(Training)
+oVentas <- window(zooVentas,start=index(zooVentas[1]),end=index(zooVentas[nObs-cOmit]))
+
+#datos reales para la actuación de forecast (Test)
+pVentas <- window(zooVentas,start=index(zooVentas[nObs-cOmit+1]),end=index(zooVentas[nObs]))
+```
+
+## Modelo ARIMA
+
+Como se ha comentado anteriomente, el estudio que se esta realizando consiste en una serie temporal no estacionaria, es decir, que su media, varianza y covarianza varían en el tiempo. Es por esto que es necesario la realización de un modelo ARIMA, para convertir la serie en una estacionaria.
+
+
+```{r}
+fit1=auto.arima(oVentas,lambda=0)
+summary(fit1)
+#para coparar modelos, auqnue son de distinta clase, no sirve de mucho
+```
+
+```{r}
+#modelo arima indicando que no es estacionario
+modeloarima<-auto.arima(zooVentas, seasonal=FALSE)
+modeloarima
+
+```
+
+También se analizan los residuos para ver qué información podemos obtener de ellos.
+
+```{r}
+#Análisis residuos
+ggtsdisplay(fit1$residuals)
+
+#ya se considerea ruido blanco, porque estan todos dentro de las lineas discontinuas
+```
+Cuando todos los retardos, que son las líneas negras, se encuentran dentro de las líneas discontinuas azul, significa que el ACF y el PACF son iguales a 0, es decir es ruido blanco  y el modelo sería correcto.
+
+La función ARIMA ha pasado el modelo de no estacionario a estacionario.
+
+```{r}
+#box-Ljung Test residuos lag =4
+
+Box.test(fit1$residuals,lag=4, fitdf=1, type="Lj")
+
+
+```
+El p-valor es mayor que 0.05 entonces se acepta la ho, no hay autocorrelación y sí hay ruido blanco. Por lo tanto, se confirma lo que se puede observar en la gráfica anterior.
+
+```{r}
+#box-Ljung Test residuos lag =6
+Box.test(fit1$residuals,lag=6, fitdf=1, type="Lj")
+```
+
+## Predicción
+
+```{r}
+fventas.arima=forecast(fit1)
+
+ggplot(nueva)+geom_point(aes(x=time,y=value))+geom_line(aes(x=time,y=value))+ geom_forecast(fventas.arima,alpha=0.4)+ggtitle("ARIMA: Predicción Apple")
+
+#la parte sombreada son las predicciones a partir de Q3-2017
+```
+
+En la siguiente gráfica se representa lo ya comentado anteriormente. La parte sombreada muestra las predicciones, de 2017 y 2018.
+
+A continuación se muestran las ventas que se predicen:
+```{r}
+fventas.arima
+summary(fventas.arima)#te muestra la prediccion de las ventas del 2017 y 2018
+```
+Alguno de los valores obtenidos en el test han sido:
+
+AIC=-39.45   AICc=-39.3   BIC=-38.04
+
+
+#ETS
+
+El ETS también predice las ventas futuras y son representadas, sombreadas en verde.
+
+```{r}
+etsFit<-ets(oVentas,damped = TRUE)
+#forecast model
+fventas.ets=forecast(etsFit)
+#Results
+summary(fventas.ets)
+```
+
+```{r}
+#representación ARIMA Vs ETS
+
+#Plot
+ggplot(nueva)+geom_point(aes(x=time,y=value))+
+  geom_line(aes(x=time,y=value))+ 
+  geom_forecast(fventas.ets,color="green", alpha=0.183,plot.conf = FALSE)+
+  ggtitle("ETS")
+
+```
+El AIC obtenido es de 706.7948
+
+## Conclusión
+
+Después de haber realizado el modelo ARIMA y el modelo ETS, se puede observar como las ventas que se predicen por el modelo ETS son mayores que por el modelo ARIMA. 
+
+Además, ambos modelos han sido óptimos para hacer la serie estacionaria, que era una de los principales objetivos. 
+
+En cuanto a la decisión entre ambos modelos, se eligiría el modelo ARIMA, ya que se AIC es menor que el ofrecido por ETS.
