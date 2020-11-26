@@ -1,0 +1,65 @@
+---
+title: "Generación de ficheros de metadatos y lectura de formatos en python"
+author: "Valentina Díaz Torres"
+date: "25/11/2020"
+output: html_document
+---
+
+
+El objetivo de esta práctica es la búsqueda de información sobre los formatos json y yalm e implemetar funciones en python para poer leer estos tipos de ficheros. También se pregunta si sería posible la lectura con Spark y qué tipo de bases de datos NOSQL usa estructuras de datos similares.
+
+Para ello, además de aportar la información complementaria necesaria, se realizará un ejemplo de lecturas de datos en ambos formatos y varios ejemplos de algunas de las funciones posibles.
+
+# FORMATO JSON
+
+JSON (JavaScript Object Notation), es un formato para el intercambio de datos basado en texto, muy usado para serializar datos.
+El dataset utilizado para este ejemplo es el conocido Iris, en formato json.
+
+
+
+```{r}
+#importar paquete necesario para abrir un fichero json
+library("rjson")
+
+```
+
+```{r}
+#carga de datos
+data <- fromJSON(file = "iris.json")
+#pero los primeros dato
+head(data)
+
+```
+
+```{r}
+#pasar a dataframe los datos
+data1 <- as.data.frame(data)
+head(data1) #mostrar los primeros
+```
+
+
+```{r}
+#ver los nombres de las columnas
+namescol<-colnames(data1)
+unique(namescol)
+```
+
+```{r}
+#algunas funciones, valor de algunas de las columnas
+data1$sepalLength
+data1$sepalWidth
+#número de elementos del dataset
+length(data1)
+```
+## YAML
+
+```{r}
+#importar librería
+library(yaml)
+```
+
+
+```{r}
+data <- fromYAML(file = "iris.json")
+```
+
