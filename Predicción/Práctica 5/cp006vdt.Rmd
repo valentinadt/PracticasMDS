@@ -1,0 +1,274 @@
+---
+title: 'CP006: BMV vs Volkswagen'
+author: "Valentina Díaz Torres"
+date: "26/11/2020"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Modelo GARCH BMV
+
+En primer lugar se va a realizar un Modelo GARCH de la empresa BMW, teniendo en cuenta los datos desde 2014 hasta hoy.
+
+```{r ,message=FALSE ,warning=FALSE}
+library("quantmod") #Package to download financials historical data 
+library(forecast)
+library("fGarch")
+library(vars)
+```
+
+
+```{r , message=FALSE ,warning=FALSE}
+#funciones
+archTest <- function(rtn,m=10){
+
+  y=(rtn-mean(rtn))^2
+  T=length(rtn)
+  atsq=y[(m+1):T]
+  x=matrix(0,(T-m),m)
+  for (i in 1:m){
+    x[,i]=y[(m+1-i):(T-i)]
+  }
+  md=lm(atsq~x)
+  summary(md)
+}
+
+
+```
+
+
+```{r ,message=FALSE ,warning=FALSE}
+#Carga de datos de BMW y Volkswagen
+BSymbol="BMW.DE"
+VSymbol="VOW3.DE"
+#seleccionar los datos desde 2014 hasta hoy
+mData<-getSymbols(BSymbol ,from="2014-01-01",to="2020-11-26",auto.assign=FALSE)
+mData1<-getSymbols(VSymbol ,from="2014-01-01",to="2020-11-26",auto.assign=FALSE)
+#Definir datos
+xData=Ad(mData)
+xData1=Ad(mData1)
+#Calcular la rentabilidad diaria
+dRentCont=dailyReturn(xData,type='log',leading=FALSE)
+dRentCont1=dailyReturn(xData1,type='log',leading=FALSE)
+#Excluir NA's
+dRentCont=na.exclude(dRentCont)
+dRentCont=na.exclude(dRentCont)
+
+```
+Una vez cargados los datos, se va a estudiar la rentabilidad diaria de la empresa en el tiempo estipulado.
+
+```{r ,message=FALSE ,warning=FALSE}
+#plot de zoo de los datos de BMW
+plot.zoo(cbind(xData,dRentCont),main=paste(BSymbol," y  Rentabilidad"),xlab="años",ylab=c("Precio","rentabilidad"))
+grid(lwd=2)
+
+```
+
+El gráfico anterior nos muestra cómo ha sido la rentabilidad del mismo. Se puede observar que con la crisis del Covid, los precios cayeron, pero que luego fueron remontando progresivamente. No obstante, comparando la rentabilidad con la de dos años atrás, esta era muy estable, mientras que a partir del Covid ha dejado de serlo.
+
+## Volatilidad de GARCH
+
+La volatilidad es calculada mediante la rentabilidad al cuadrado, ya que como tal no es medible, es este el estimador usado.
+
+```{r ,message=FALSE ,warning=FALSE}
+#Plot return squared
+plot.zoo(cbind(Ad(mData),dRentCont,dRentCont^2),main=paste(BSymbol," y  Rentabilidad"),xlab="años",ylab=c("Precio","rentabilidad","Volatilidad"))
+
+```
+En este gráfico se pueden ver los efectos de la volatilidad, como medida de riesgo comparados con el precio y la rentabilidad. Todos coinciden en el punto del Covid, comentado anteriormente.
+
+
+Para la identificación y diagnosis de GARCH se han realizado los tests que aparecen a continuación.
+
+__Testing mean__
+
+
+```{r , eval = FALSE , message=FALSE ,warning=FALSE}
+t.test(dRentCont)
+
+```
+
+__ACF y PACF de los rendimientos al cuadrado__
+
+
+```{r ,message=FALSE ,warning=FALSE}
+VolProxy=dRentCont^2 #al cuadrado para conocer la volatilidad
+#gráfico
+tsdisplay(VolProxy) 
+```
+En los gráficos de este test, se puede apreciar como no hay ruido blanco y por tanto hay autocorrelación.
+
+__Ljung-Box Test __
+
+
+```{r ,message=FALSE ,warning=FALSE, eval=FALSE}
+#Ljung-Box Test 
+Box.test(VolProxy,lag=10,  type="Lj")
+Box.test(VolProxy,lag=20,  type="Lj")
+Box.test(VolProxy,lag=40,  type="Lj")
+```
+
+__LM test__
+
+```{r ,message=FALSE ,warning=FALSE , eval = FALSE}
+archTest(dRentCont,20)
+```
+En este test, la hipótesis nula es de No GARCH. Como el P-value es próximo a 0
+
+__Pruebas GARCH (1,0) y GARCH (1,1)__
+
+```{r ,message=FALSE ,warning=FALSE}
+
+#ARCH(1)
+m1=garchFit(~1+garch(1,0),data=dRentCont,trace=F) # Fit an ARCH(1) model
+#summary(m1)
+resi=residuals(m1,standardize=T) #residuals
+resi=xts(resi,order.by=index(dRentCont)) #residuals as xts
+tsdisplay(resi^2) #acf pacf residuals
+
+#GARCH(1,1)
+m2=garchFit(~1+garch(1,1),data=dRentCont,trace=F) # Fit an GARCH(1,1) model
+#summary(m2)
+
+resi=residuals(m2,standardize=T) #residuals
+resi=xts(resi,order.by=index(dRentCont)) #residuals as xts
+tsdisplay(resi^2) #acf pacf residuals
+plot(m2, which = 1)
+
+
+
+```
+
+
+__T-student__
+
+```{r,message=FALSE , warning=FALSE}
+#t-student
+m3=garchFit(~1+garch(1,1),data=dRentCont,trace=F,cond.dist="std")
+#summary(m3)
+plot(m3 , which = 1)
+```
+
+A continuación se puede observar la volatilidad estudiada de BMW, que e dispara a principio de 2020 con el covid.
+
+```{r,message=FALSE}
+v1=volatility(m3)  #volatilidad
+v1=xts(v1,order.by=index(dRentCont)) #volatilidad con xts0
+plot(sqrt(252)*v1)
+```
+
+__Residuos__
+
+Cuando se generan los residuos, se observa cómo son ruido blanco, es decir que no hay autocorrelación.
+
+```{r,message=FALSE}
+residuos=residuals(m3,standardize=T) # Standardized residuals
+resi=xts(residuos,order.by=index(dRentCont)) # Standardized residuals as XTS
+tsdisplay(residuos^2) #acf pacf residuals
+plot(residuos)
+
+```
+
+__Predicción Forecast__
+
+A continuación se realiza la predicción mediante forecast. En los siguientes gráficos queda reflejado el nivel inferior, en el que, según la predicción no van a bajar el precio de las cotizaciones, este es -0.3 aproximadamente. El límite superior sería 0.3. Por lo tanto el intervalo de predicción de los rendimientos estaría comprendido entre estos valores. Sería muy poco probable que un activo de BMW estuviese por encima de la línea azul o por debajo de la verde, por lo que habría que tenerlo en cuenta a la hora de comprar o vender acciones de esta empresa.
+
+```{r,message=FALSE }
+predict(m3) #volatilidad forecast
+predict(m3, n.ahead = 10, plot=TRUE, crit_val=2) #plot con 2*standard error
+predict(m3,n.ahead=20,plot=TRUE,conf=.9,nx=100) # plot con 100 datos y con 90% de nivel de confianza
+
+
+```
+
+
+## Modelo VAR BMW-Volkswagen
+
+Se realiza un modelo VAR en cuyas  series temporales, de BMW y Volkswagen, existe bidireccionalidad.
+
+En este caso se va a trabajar con series mensuales y no diarias, por lo que lo primero que hay que hacer es transformar los datos y seleccionar series mensuales.
+
+```{r,message=FALSE , warning=FALSE}
+## Leer datos
+bmw=getSymbols("BMW.DE",env=NULL)
+vow=getSymbols("VOW3.DE",env=NULL)
+# Generar rentabilidad mensual
+rbmw=monthlyReturn(bmw[,6])
+rvow=monthlyReturn(vow[,6])
+```
+
+
+```{r,message=FALSE , warning=FALSE}
+#generar un vector
+vY=cbind(rbmw,rvow)
+colnames(vY)=c("BMW","VOW")
+vY=na.omit(vY)
+
+```
+
+
+```{r,message=FALSE , warning=FALSE}
+#Selección del modelo VAR
+VARselect(vY)
+```
+
+__Estimación del Modelo__
+
+```{r,message=FALSE , warning=FALSE }
+#Estimación
+model.var=VAR(vY)
+summary(model.var)
+model.var1=VAR(vY,type="none")
+summary(model.var1)
+
+```
+__Causalidad de Granger__
+
+Modelo de Causalidad de Granger, donde se prueba si la variable es útil para seleccionar variables.
+
+```{r,message=FALSE , warning=FALSE }
+causality(model.var1)
+```
+
+p-value es menor que 0.05, por lo que se rechazaria la hipótesis nula de no causalidad entre BMW y Voklwagen.
+
+__Respuesta al impulso__
+
+El análisis de respuesta de impulso, mide la respuesta de una variable ante un cambio.
+
+```{r,message=FALSE , warning=FALSE }
+#respuesta al impulso
+model.ri=irf(model.var1)
+model.ri
+plot(model.ri)
+
+```
+
+Las líneas discontinuas representan los intervalos de confianza. La línea negra representa  que no hay un efecto contemporáneo.
+
+
+__Predicción del modelo__
+
+Las predicciones del modelo, para BMW y para Voklswagen,  por tanto serían las siguientes:
+
+```{r,message=FALSE , warning=FALSE,echo = FALSE}
+#prediccion
+predict(model.var1, n.ahead = 8, ci = 0.95) 
+
+```
+
+
+
+
+
+
+
+
+
+
+
