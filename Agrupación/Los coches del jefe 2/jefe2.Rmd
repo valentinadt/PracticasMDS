@@ -1,0 +1,221 @@
+---
+title: "Los coches del jefe, parte 2. Cómo los reparto. "
+author: "Valentina Díaz Torres"
+date: "01/12/2020"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r librerias, include=FALSE, message=FALSE}
+library(haven)
+library(dplyr)
+library(ggplot2) 
+library(readxl)
+library(gmodels)
+library(Hmisc)
+library(ggthemes)
+library(fastDummies) 
+library(car)
+library(corrplot)
+library(mctest)
+library(tidyverse)
+library(skimr)
+library(corrplot)
+library(factoextra)
+library(cluster)
+library("NbClust")
+```
+
+## Introducción
+
+Tras haber realizado un análisis exploratorio en el informe anterior, acerca de las distintas variables que podrían afecar al reparto de los coches del jefe, en 10 lugares diferentes, se eligieron unas variables, las que más aportaban al estudio, en base a diferntes factores.
+
+Estas variables son: Cilindrada, revoluciones por miuto, peso, nº de plazas, consumo a 90 km/h, velocidad y precio en Euros.
+
+Una vez que han sido elegidas estas variables, el siguiente objetivo es repartir la colección del coche del jefe en torno a las distintas residencias, que este tiene por el mundo. Esto significa que los coches tienen que ser agrupado en grupo óptimos, en base a sus características.
+
+Para decidir en cuántos grupos se dividen los coches habría que tener en cuenta varios factores. En primer lugar hay 125 coches y el Jefe tiene 10 casas repartidas por Europa, en las cuales tiene capacidad máxima de 15 coches. Además, analizando bien la localización de estas casas, se observa que hay tres casas cercanas a Mónaco y próximas a la costa, una en la Isla de Corse y otra en la Rochelle, también costa. Por tanto estas podrían formar un primer grupo, con coches con características parecidas, que normalmente no serán de muchas revoluciones, ni con mucha potencia, por ejemplo. 
+Otro grupo podría estar compuesto por los coches de Andorra y Suiza, que conforman tres casas, ambos necesitarán ser coches de montaña, adaptados al clima y al relieve de las zonas. Por último, hay dos casas en París, donde se necesitarán coches de ciudad, que no consuman ni contaminen demasiado, y que sean ligeros de mover, posiblemente de pocas plazas.
+
+Para comprobar esto, se ha realizado un análisis cluster,para conocer seguro que es óptima esta división.
+
+
+```{r,include=FALSE, message=FALSE}
+#Carga de datos
+cochesJefe <- read_sav("tterreno.sav")
+cochesJefe <- tbl_df(cochesJefe)
+#creación de una columna con el precio en euros
+pvp_Euros <- cochesJefe$pvp /166.386 #1 euro = 166.386 pesetas
+cochesJefe['pvpEuros'] = pvp_Euros
+#quedarnos con las variables con las que vamos a trabajar
+cochesJefe <- select(cochesJefe, -potencia, -acel2, -cons120, -consurb,-cilindro, -acelerac,-marca, -modelo,-pvp)
+#sustitución de los valores NA's
+cochesJefe=na.omit(cochesJefe)
+```
+
+```{r,include=FALSE, message=FALSE}
+# Escalar los datos para que sea más fácil trabajar con ellos.
+cochesJefe.esc =scale(cochesJefe, center=TRUE, scale = TRUE)
+
+
+```
+
+Para realizar el análisis, se parten de 3 cluster, ya que, a partir de 4, estos empiezan a solaparse. La dimensión 1 explicaría un 51,5% de la información y la dimensión 2 un 20,6%.  La representación de 3 cluster en el mapa sería la siguiente:
+
+```{r}
+set.seed(123)
+
+prueba1 =kmeans(cochesJefe.esc, 3)
+fviz_cluster(list(data = cochesJefe.esc, cluster = prueba1$cluster),
+             frame.type = "norm", geom = "point", stand = FALSE)
+
+
+
+```
+Este gráfico nos muestra que a priori las manchas rojas son las que van a tener más correlación, por lo que se podrían distinguir algunos grupos en los extremos.
+
+```{r}
+
+q.dist =get_dist(cochesJefe.esc, stand = TRUE, method = "pearson")
+
+fviz_dist(q.dist, gradient =list(low = "#00AFBB", mid = "white", high = "#FC4E07"), lab_size = 5)
+```
+
+
+
+
+```{r,include=FALSE, message=FALSE}
+dist.eucl <- dist(cochesJefe.esc, method = "euclidean")
+round(as.matrix(dist.eucl)[1:7, 1:7], 1)
+```
+
+
+```{r,include=FALSE, message=FALSE}
+cochesJefe.cor=cor(t(cochesJefe.esc[,-1]),  method = "pearson")# Empleamos quiebras, que es el objeto re-escalado, sin la primera columna.
+round(cochesJefe.cor[1:6, 1:6], 2)
+
+dist.cor=as.dist(1 - cochesJefe.cor)# Las correlaciones negativas tendrán en la nueva matriz de distancias un valor > 1
+round(as.matrix(dist.cor)[1:6, 1:6], 2)
+```
+```{r,include=FALSE, message=FALSE}
+corrplot(as.matrix(dist.eucl), is.corr = FALSE, method = "color", type="lower",diag=F, order="hclust", tl.cex=0.6, tl.col="blue")
+
+```
+También, se ha realizado un dendograma, que nos muestra dos grupos claramente diferenciados y un tercero. De estos salen otros subgrupos, por lo que se comprueba que habría tres grupos grandes importantes.
+
+```{r}
+
+
+fviz_dend(hclust(dist(cochesJefe.esc)), k = 4,  cex = 0.8, main = "Dendrograma Coches Jefe")
+```
+
+```{r,include=FALSE, message=FALSE}
+plot(hclust(dist.eucl, method = "ward.D2"), cex=0.6, main="Dendrograma", ylab="Anchura",xlab="Análisis cluster aplicando Ward sobre matriz de distancias euclídeas")
+
+```
+Este mapa de calor nos aporta más información, completando el dendograma anterior.
+
+```{r}
+heatmap(as.matrix(dist.eucl), symm = TRUE, distfun = function(x)as.dist(x))
+
+```
+Según el análisis cluste utilizando K-medias, aparecen los tres grupos claramente diferenciados, habiendo más infomación en el 2º. No obstante, también cabría la posibilidad de plantearse un 4º grupo, según este análisis, aunque ya no quedarían tan separados y hab´ria solapamiento del 4º y el 3º.
+
+```{r}
+cochesJefe.eclust =eclust(cochesJefe.esc, FUNcluster = "kmeans", stand=TRUE,hc_metric="euclidean", nstart=25)
+# podemos fijar el número de clusters añadiendo k=número de clusters, por ejemplo k=3
+cochesJefe.eclust =eclust(cochesJefe.esc, FUNcluster = "kmeans", stand=TRUE,hc_metric="euclidean", nstart=25, k=4)
+```
+El gráfico de siluetas nos muestra 4 grupos representados, aunque la mayoría de información sería recogida por los 3 primero grupos.
+
+```{r}
+fviz_silhouette(cochesJefe.eclust)
+```
+__Númro óptimo de clusters__
+
+```{r,include=FALSE, message=FALSE}
+cochesJefe.eclust$nbclust
+```
+El número óptimo de clusters, como se ha ido viendo a lo largo de los distintos gráficos es se encuenta comprendido entre tres y cuatro.Esto se puede ver representado en la siguiente gráfica, en el que el número óptimo de clústers o grupos viene definido según k-medias.
+
+
+
+```{r,include=FALSE, message=FALSE}
+set.seed(123)
+k.max = 15# Máximo número de clusters
+# lo aplicamos sobre sec.def, ya tipificado
+data=cochesJefe.esc
+wss=sapply(1:k.max,
+           function(k){kmeans(data, k, nstart=10 )$tot.withinss})
+plot(1:k.max, wss,
+     type="b", pch = 19, frame = FALSE,
+     xlab="Número K de clusters",
+     ylab="Suma total de cuadrados intra-clusters")
+abline(v = 3, lty =2)
+abline(v = 4, lty =3)
+```
+
+
+```{r}
+
+fviz_nbclust(data, kmeans, method = "wss") +geom_vline(xintercept = 3, linetype = 2) +geom_vline(xintercept = 4, linetype = 3) +ggtitle("Número óptimo de clusters - k medias") +labs(x="Número k de clusters",y="Suma total de cuadrados intra grupos")
+```
+
+
+```{r,include=FALSE, message=FALSE}
+
+# Sugiere más 2 ó 4 grupos que 3
+fviz_nbclust(data,  cluster::pam, method = "wss") +
+  geom_vline(xintercept = 2, linetype = 2) +
+  geom_vline(xintercept = 4, linetype = 3) +ggtitle("Número óptimo de clusters - PAM") +
+  labs(x="Número k de clusters",y="Suma total de cuadrados intra grupos")
+```
+
+```{r,include=FALSE, message=FALSE}
+# Sugiere más bien dos gruposfviz_nbclust(data,  hcut, method = "wss") +geom_vline(xintercept = 2, linetype = 2) +ggtitle("Número óptimo de clusters - jerárquico") +labs(x="Número k de clusters",y="Suma total de cuadrados intra grupos")
+```
+
+
+```{r,include=FALSE, message=FALSE}
+
+k.max = 10
+# cálculo del perfil promedio para número de clusters entre k = 2 y k = 15
+sil =rep(0, k.max)
+#Bucle de cálculo sobre k-medias
+for(i in 2:k.max){
+  km.data =kmeans(data, centers = i, nstart = 25)
+  ss =silhouette(km.data$cluster,dist(data))
+  sil[i] =mean(ss[, 3])
+  }
+# Gráfico de la anchura del perfil
+plot(1:k.max, sil, type = "b", pch = 19,
+     frame = FALSE, xlab = "Número k de clusters")
+abline(v =which.max(sil), lty = 2)
+```
+
+
+```{r}
+
+
+set.seed(123)
+clus.nb =NbClust(data, distance = "euclidean",
+                 min.nc = 2, max.nc = 10,
+                 method = "complete",index ="gap")
+clus.nb# resultados
+```
+
+
+
+```{r,include=FALSE, message=FALSE}
+nb.todos =NbClust(data, distance = "euclidean", min.nc = 2,max.nc = 10, method = "complete", index ="all")
+```
+Como conclusión cabría decir, que se ha confirmado mediante numerosos análisis que el número elegido de grupos para distribuir los coches serían en grupos de tres. Todos los análisis y diferentes modelos afirman que 3 es el mejor número, como se puede observar en este histograma.
+
+```{r}
+fviz_nbclust(nb.todos) +theme_minimal() +labs(x="Número k de clusters", y="Frecuencia")
+```
+
