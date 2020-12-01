@@ -1,0 +1,222 @@
+---
+title: "Untitled"
+author: "Valentina Díaz Torres"
+date: "23/11/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Introducción
+
+El objetivo de esta práctica es agrupar 125 vehículos de todo terreno clásicos en 10 lugares disponibles para ello. Será necesario tener en cuenta y analizar sus características, con el fin de seguir un criterio de agrupación alrededor de estos 10 espacios.
+
+En primer lugar se deberá justificar la elección de las caracterísicas que se han considerado más importantes para llevar a cabo la segmentación y, en segundo, las caracterísisticas de los coches adquiridos.
+
+```{r librerias, include=FALSE, message=FALSE}
+library(haven)
+library(dplyr)
+library(ggplot2) 
+library(readxl)
+library(gmodels)
+library(Hmisc)
+library(ggthemes)
+library(fastDummies) 
+library(car)
+library(corrplot)
+library(mctest)
+library(tidyverse)
+library(skimr)
+```
+
+
+```{r include=FALSE, message=FALSE}
+mydata <- read_sav("tterreno.sav")
+mydata <- tbl_df(mydata)
+summary(mydata) #Existen 46 NA´s. También se obtienen otros valores relevante como el máximo, mínimo y media de cada una de las variables.
+```
+
+Según un análisis realizado sobre los datos que ofrece el dataset, se ha comprobado que la variable tiempo de aceleración, contiene 46 valores nulos, por lo que estaría aportando muy poca información y la sustitución de estos no se podría hacer de un modo óptimo, es por ello que se ha decidido eliminar. También, se ha detectado que la variable Consumo 120 km/h contiene 15 valores nulos. Estos han sido sustituidos por la media de la variable, 12.5, ya que eliminarlos podría haber significado una pérdida de información. Además, aunque en menor cantidad, hay otros valores nulos en Consumo 90 km/h, velocidad, peso y en consumo urbano. En todas se ha llevado a cabo el mismo proceso, la sustitución por la media.
+
+```{r}
+#eliminación de la columna acelerac
+
+mydata <- select(mydata, -acelerac)
+
+#sustitución de NA´s por la media en cons120      
+mydata[is.na(mydata$cons120), "cons120"] <- mean(mydata$cons120, na.rm=T)
+#sustitución de NA´s por la media en cons90 
+mydata[is.na(mydata$cons90), "cons90"] <- mean(mydata$cons90, na.rm=T)
+#sustitución de NA´s por la media en peso 
+mydata[is.na(mydata$peso), "peso"] <- mean(mydata$peso, na.rm=T)
+#sustitución de NA´s por la media en consurb 
+mydata[is.na(mydata$consurb), "consurb"] <- mean(mydata$consurb, na.rm=T)
+#sustitución de NA´s por la media en velocida 
+mydata[is.na(mydata$velocida), "velocida"] <- mean(mydata$velocida, na.rm=T)
+```
+
+
+Para trabajar de manera más cómoda con el dataset,se crea una nueva columna con el precio de venta al público (pvp) expresado en euros, para poder adaptar el análisis a la moneda actual.
+
+```{r include=FALSE, message=FALSE}
+pvp_Euros <- mydata$pvp /166.386 #1 euro = 166.386 pesetas
+
+mydata['pvpEuros'] = pvp_Euros
+
+```
+
+## Exploración de los datos
+
+```{r include=FALSE, message=FALSE}
+glimpse(mydata)
+```
+
+El dataset estudiado contiene 15 variables, una de tipo character y catorce de ellas numéricas, de las cuales 10 son del tipo double (donde solamente figuran datos numéricos) y 4 son del tipo double labelled (donde figuran tanto datos numéricos, como etiquetas que hacen referencia a los datos que representa)
+
+La variable "marca" en el dataset, solamente tiene valores aparentemente del 1 al 17, correspondiendo estos valores a una marca asignada a cada uno de ellos. Aquí se pueden observar el valor asignado y la etiqueta de cada una de las marcas.
+
+```{r}
+#attributes(mydata$marca)
+unique(mydata$marca)
+```
+Para poder realizar la representación de las distintas variables del dataset mediante gráficas, debemos asegurarnos de que todas pueden ser mostradas, para ello, debemos convertir nuestra variable de tipo character (modelo) a una variable de tipo factor.
+
+```{r}
+mydata$modelo<-as.factor(mydata$modelo)
+
+```
+
+Uno de los objetivos de este análisis es poder segmentar los coches, bajo algún criterio, para repartirlo entorno a los 10 lugares existentes. Para ello se han relizado algunas agrupaciones y su representación. 
+
+## Análisis Exploratorio
+
+Para conocer un poco más de las variables, se podría llevar a cabo un análisis exploratorio previo, para conocer algunos valores y la posible presencia de outliers que afecten a la distribución.
+
+
+### Gráfico de Cajas
+
+El boxplot nos permite apreciar como las variables potencia, precio y velocidad, se distribuyen más o menos alrededor de la mediana. No obstante, hay bastante outliers o valores atípicos en cuanto a potencia y precio y solo uno en velocidad, posiblemente provocados por las diferentes características de algunos coches.
+
+```{r}
+par(mfrow=c(1,1))
+boxplot(mydata$pvpEuros,main = "Precio Vehiculos",
+        ylab = "Precio (Euros)", notch = FALSE)
+
+par(mfrow=c(1,1))
+boxplot(mydata$potencia,main = "Potencia Vehículos",
+        ylab = "Potencia (CV)", notch = FALSE)
+
+par(mfrow=c(1,1))
+boxplot(mydata$velocida,main = "Velocidad Vehículos",
+        ylab = "Velocidad (Km/h)", notch = FALSE)
+
+```
+## Gráfico de Barras
+
+```{r}
+lbls <- c("4 cilindros", "6 cilindros","8 cilindros")
+lbls1 <- c("2 plazas", "4 plazas", "5 plazas", "6 plazas", "7 plazas", "8 plazas", "9 plazas")
+color <- c("blue", "aquamarine", "orange", "purple4","black", "salmon","white")
+par(mfrow=c(1,1)) 
+
+barplot(table(as.factor(mydata$cilindro)), main="Cilindros", xlab = "Nº de Cilindros", ylab = "Nº Coches", col=palette())
+barplot(table(as.factor(mydata$velocida)), main="Velocidad Máxima del Vehículo", xlab = "Velocidad (Km/h)", ylab = "Nº Coches", col=palette())
+barplot(table(as.factor(mydata$cons120)), main="Consumo Medio a 120 km/h" , xlab = "Consumo (km/h)", ylab = "Nº Coches", col=palette())
+barplot(table(as.factor(mydata$plazas)), main="Plazas del vehículo" , xlab = "Nº de plazas", ylab = "Nº Coches", col=palette())
+barplot(table(as.factor(mydata$marca)),main="Número de marcas", xlab = "Nº de marcas", ylab = "Nº Coches", col=palette())
+
+```
+###Calculo para sacar gráficas Pie
+
+```{r}
+numCB <- length(bajoCons$cons120)
+numCM <- length(medCons$cons120)
+numCA <- length(altoCons$cons120)
+t1 <- c(numCB, numCM, numCA)
+labelConsumo <- c("Consumo Bajo", "Consumo Medio", "Consumo Alto")
+
+numPB <-length(precBajo$pvpEuros)
+numPM <-length(precMed$pvpEuros)
+numPA <-length(precAlto$pvpEuros)
+t2 <- c(numPB,numPM,numPA)
+labelPrecio <- c("Precio Bajo", "Precio Medio", "Precio Alto")
+
+```
+
+
+##Gráfico Pie e Histograma
+
+```{r}
+
+pie(x = table(mydata$cilindro), labels = lbls, main="Cilindros", col=palette())
+pie(x = table(mydata$plazas), labels = lbls1, main="Plazas del vehículo", col=palette())
+pie(t1,labels = labelConsumo, main="Consumo", col=palette())
+pie(t2,labels = labelPrecio, main="Precio", col=palette())
+
+
+
+hist(mydata$pvpEuros, main = "Histograma Precio", xlab = "Euros(€)", ylab = "Nº de coches", col=palette(), breaks = 60, freq = T)
+hist(mydata$potencia, main = "Histograma Potencia", xlab = "Potencia(CV)", ylab = "Nº de coches", col=palette(), breaks = 50,freq = T)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Agrupación según consumo
+
+```{r}
+bajoCons <- filter(mydata, cons120 < 10)
+medCons <- filter(mydata, cons120 >= 10 & cons120 <15)
+altoCons <- filter(mydata, cons120 >= 15)
+
+
+barplot(table(as.factor(bajoCons$cons120)), main="Consumo Bajo", col=palette(), xlab = "Litros", ylab = "Nº de coches")
+barplot(table(as.factor(medCons$cons120)), main="Consumo Medio", col=palette(), xlab = "Litros", ylab = "Nº de coches")
+barplot(table(as.factor(altoCons$cons120)), main="Consumo Alto", col=palette(), xlab = "Litros", ylab = "Nº de coches")
+
+```
+
+##Agrupación según potencia
+
+```{r}
+bajaPot <- filter(mydata, potencia < 100)
+medPot <- filter(mydata, potencia >= 100 & potencia <150)
+altaPot <- filter(mydata, potencia >= 150)
+
+```
+
+##Agrupación según precio
+
+```{r}
+precBajo <- filter(mydata, pvp_Euros < 10000)
+precMed <- filter(mydata, pvp_Euros >= 10000 & pvp_Euros <30000)
+precAlto <- filter(mydata, pvp_Euros >= 30000)
+
+```
+
+
