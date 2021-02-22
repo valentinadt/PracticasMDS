@@ -1,0 +1,683 @@
+---
+title: "ACCIDENTES DE BICICLETAS EN MADRID 2019"
+author: "Andrea Jiménez Zúñiga, Isabel Afán de Ribera, Valentina Díaz Torres"
+output:
+  prettydoc::html_pretty:
+    theme: hpstr
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+
+```
+
+# Objetivo del trabajo
+
+El objetivo del presente trabajo es la realización de un análisis de clasificación de la base de datos que recoge los accidentes de biciclentas en Madrid, en el año 2019.
+
+Para ello, en primer lugar se procederá a hacer una análisis exploratorio de las distintas variables, con el fin de descubrir cómo se distribuyen y si estas realmente son importantes o no para el estudio.
+
+Tras haber hecho un recorrido visual por las variables, se pretende estimar cuál es el mejor modelo para clasificar los accidentes de bicicletas. Para ello se han empleado técnicas como la realización de un modelo de regresión linal, análisis discriminante LDA o QDA, árboles de decisión y método KNN.
+
+Por último, una vez que se tenga un modelo óptimo, se medirá el grado de eficacia y precisión del mismo, es decir en qué grado cumple con los objetivos previstos.
+
+# Descripción del dataset
+
+Los datos de estudio se han obtenido a través del portal de datos abiertos del Ayuntamiento de Madrid (https://datos.madrid.es/portal/site/egob). El dataset analizado consiste en 891 observaciones y 13 variables relativas a distintas condiciones, ubicación, nivel de gravedad y otras características de los distintos accidentes producidos. En concreto las variables son:
+
+* `nº expediente`
+* `fecha`: Fecha del accidente
+* `hora`: La hora se establece en rangos horarios de 1 hora
+* `calle`: Calle donde se produjó el accidente
+* `número`: Número de la calle
+* `distrito`: Nombre del distrito
+* `tipo de accidente`: Puede ser: colisión doble, colisión múltiple, alcance, choque contra obstáculo o elemento de la vía, atropello a persona, vuelco, caía, otras causas.
+* `estado meteorológico`: Condiciones ambientales que se dan en el momento del siniestro. 
+* `tipo de vehículo`: Tipo de vehículo afectado (siempre bicicleta)
+* `tipo persona`: Puede ser: Conductor, peatón, testigo o viajero
+* `tramo edad`: Tramo de edad de la persona afectada
+* `sexo`: Puede ser: Hombre, mujer o no asignado
+* `lesividad`: Puede ser leve, grave, fallecido, sin asistencia sanitaria o se desconoce. Dentro de leve y grave existen distintos tipos.
+
+
+```{r Libraries and functions, message=FALSE, warning=FALSE, include = FALSE }
+library(readxl)
+library(here) # Comentar
+library(tidyverse)
+library(janitor) # Clean names
+library(skimr) # Beautiful Summarize
+library(magrittr) # Pipe operators
+library(corrplot) # Correlations
+library(ggcorrplot)  # Correlations
+library(PerformanceAnalytics) # Correlations
+library(leaps) # Model selection
+library(glmnet) # Linear regression
+library(boot)
+library(ggplot2) # Visualización
+library(dplyr) # Data manipulation
+library(hrbrthemes)
+library(leaflet)
+library(reshape2) 
+library(lubridate)
+library(ggmap)
+library(RColorBrewer) # Gama de colores para los gráficos
+library("pscl") # R2 McFadden
+library(klaR) # Partition plots
+library(readr)
+library(epiDisplay) # Nos da info sobre la exponencial de los coeficientes 
+library(pROC) # Curva ROC
+library(wooldridge)
+library(MASS) # LDA model and stepAIC
+library(e1071) # Naive Bayes
+library(DAAG)
+library(class) # KNN
+library(gmodels) # KNN
+library(caret) # KNN
+library(rpart) # arboles de decision
+library(rpart.plot) # arboles de decision
+```
+
+
+```{r warning = FALSE}
+accidentes <- read_excel("AccidentesBicicletas_2019.xlsx")
+
+attach(accidentes)
+```
+
+```{r }
+accidentes %<>% clean_names()
+colnames(accidentes)
+```
+
+## Análisis Exploratorio de Datos 
+
+Elegimos las variables con las que queremos trabajar en base a la relevancia del estudio. En nuestro análisis no vamos a utilizar número de expediente, calle y número ya que trabajamos con distritos y tipo de vehículo ya que sólo se tienen en cuenta las bicicletas. 
+
+```{r }
+accidentes <- accidentes[,-c(1,4,5,9)]
+accidentes
+```
+```{r}
+skim(accidentes)
+```
+
+Sustituimos los valores NA por 0.
+Interpretamos los 0 en la columna lesividad como aquellos que no han recibido asistencia sanitaria, ya que en el dataset lo recoge como casillas en blanco. 
+
+```{r}
+accidentes <- na.fill(accidentes, 0)
+skim(accidentes)
+accidentes<- as.data.frame(accidentes)
+```
+
+#### TOTAL DE ACCIDENTES: 
+
+```{r}
+total_accidentes <- nrow(accidentes)
+total_accidentes <- paste(c('Número total de accidentes registrados: ', as.character(total_accidentes)), collapse = " ")
+total_accidentes
+```
+
+```{r }
+g <- ggplot(accidentes, aes(lesividad, fill= lesividad)) + 
+  geom_bar() + 
+  labs(title = " Número de accidentes por lesividad", 
+       subtitle = "2019",
+       x = "lesividad del accidente", 
+       y = 'Número de accidentes') + 
+  scale_y_continuous(breaks = c(20,40,60,80,100,120,140,160,180,200,220,240,260,280)) + 
+  scale_fill_brewer(palette = 'Set3') +
+  theme_minimal() + 
+  theme(legend.position = 'none')
+g 
+
+```
+
+Se puede observar en el gráfico que la gravedad más frecuente de accidente es a la correspondiente a la lesividad 07, es decir, aquellos que necesitaron asistencia sanitaria sólo en el lugar del accidente. 
+
+Vamos a separar la variable fecha por mes, año y dia para así poder graficarlos. 
+
+```{r}
+accidentes$fecha <- dmy(accidentes$fecha)
+accidentes$ANO <- year(accidentes$fecha)
+accidentes$MES <- month(accidentes$fecha)
+accidentes$DIA <- day(accidentes$fecha)
+```
+
+```{r}
+accidentes$MES_NAMES <- 0
+add_months_names <- function(x){
+  if (x == 1) {
+    x <- "Enero"
+  }
+  if (x == 2) {
+    x <- "Febrero"
+  }
+  if (x == 3) {
+    x <- "Marzo"
+  }
+  if (x == 4) {
+    x <- "Abril"
+  }
+  if (x == 5) {
+    x <- "Mayo"
+  }
+  if (x == 6) {
+    x <- "Junio"
+  }
+  if (x == 7) {
+    x <- "Julio"
+  }
+  if (x == 8) {
+    x <- "Agosto"
+  }
+  if (x == 9) {
+    x <- "Septiembre"
+  }
+  if (x == 10) {
+    x <- "Octubre"
+  }
+  if (x == 11) {
+    x <- "Octubre"
+  }
+  if (x == 12) {
+    x <- "Diciembre"
+  }
+  x
+}
+
+accidentes$MES_NAMES <- sapply(accidentes$MES, add_months_names)
+
+temporal_table <- accidentes %>% 
+  group_by(MES, MES_NAMES) %>% 
+  summarise(Total = n())
+```
+
+
+```{r}
+p <- ggplot(accidentes, aes(MES, fill= MES_NAMES)) + 
+  geom_bar() + 
+  labs(title = "Accidentes por mes", 
+       subtitle = "2019",
+       tag = "Figure 2",
+       colour = "Gears",
+       x = "Año 2019 - Meses", 
+       y = 'Número de accidentes') + 
+  scale_y_continuous(breaks = c(10, 30, 50, 70, 90, 110)) +
+  scale_x_discrete(limit = temporal_table$MES, labels = temporal_table$MES_NAMES) +
+  scale_fill_brewer(palette="Set3") +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = 'none')
+p 
+```
+
+Se puede observar que en los meses más calurosos, temporada primavera-verano, es cuando se han producido más accidentes. 
+
+```{r}
+colourCount = length(unique(accidentes$distrito))
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+```
+
+```{r}
+g <- ggplot(accidentes, aes(distrito, fill= distrito)) + 
+  geom_bar() + 
+  labs(title = " Número de accidentes por distrito", 
+       subtitle = "2019",
+       x = "Distrito", 
+       y = 'Número de accidentes') + 
+  scale_y_continuous(breaks = c(20,40,60,80,100,120,140,160,180,200,220,240,260,280)) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = 'none')
+g 
+```
+
+En el distrito del centro se han dado el mayor número de accidentes, seguido de Arganzuela, el Barrio de Salamanca y Chamberí. 
+
+```{r}
+
+d <- ggplot(accidentes, aes(rango_edad, fill= sexo)) + 
+  geom_bar() + 
+  labs(title = " Número de accidentes por edad", 
+       subtitle = "2019",
+       x = "Rango de edad", 
+       y = 'Número de accidentes') + 
+  scale_y_continuous(breaks = c(20,40,60,80,100,120,140,160,180,200,220,240,260,280)) +
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = 'left')
+d
+```
+
+Los que están en el rango de edad de 25 a 29 años son los más accidentados. Más hombres que mujeres han sufrido accidentes. 
+
+```{r}
+h <- ggplot(accidentes, aes( y = tipo_accidente, fill = lesividad)) + 
+  geom_bar() + 
+  labs(title = " Número de accidentes por ", 
+       subtitle = "2019",
+       x = "Lesividad", 
+       y = 'Tipo de accidentes') + 
+  scale_fill_manual(values = getPalette(colourCount)) +
+  scale_y_discrete(labels = accidentes$tipo_accidente)
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = 'none')
+h
+```
+
+El tipo de accidente más frecuentado es por alcance, y de gravedad 07, seguido de colisión fronto-lateral.
+
+```{r}
+
+t <- ggplot(accidentes, aes(estado_metereologico, fill= estado_metereologico)) + 
+  geom_bar() + 
+  labs(title = " Número de accidentes por distrito", 
+       subtitle = "2019",
+       x = "Distrito", 
+       y = 'Número de accidentes') + 
+  scale_fill_manual(values = getPalette(colourCount)) +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = 'none')
+t 
+
+```
+
+El mayor número de accidentes se dan cuando el estado meteorológico es despejado, lo cual tiene sentido ya que las bicicletas se utilizan más cuando hay buen tiempo.
+
+## Clasificación de la variable dependiente
+
+Para poder realizar los modelos es necesario tomar lesividad, que es nuestra variable dependiente, como factor. Para ello lo hemos dividido en aquellos que han necesitado asistencia sanitaria tras el accidente, dándole el valor de 1, y aquellos que no han necesitado asistencia se les da valor 0. 
+
+```{r}
+colnames(accidentes)
+```
+
+Sin embargo, hemos probado otro tipo de clasificación dándoles el valor de 1 a aquellos cuya lesividad ha sido clasificada mayor de 03 y aquellos cuya lesividad es menor o igual a 03 se les da el valor de 0. Una vez realizados los modelos se ha podido observar que la precisión de los modelos disminuye mucho más a si se realiza la clasificación de haber necesitado asistencia sanitaria o no, por lo que no está relacionado el nivel de lesividad, es decir, a mayor lesividad no aumenta la precisión del modelo. 
+
+```{r include = FALSE}
+###gravedad <- ifelse(accidentes$lesividad >"03",1,0)  ## Probando este tipo de clasificacion nos da una precision de los modelos mucho mas bajos. 
+###gravedad <- as.factor(gravedad)
+###datos <- cbind(accidentes,gravedad)
+###datos <- as.data.frame(datos)
+###datos<-datos[,-1]
+###head(datos)
+```
+
+La clasificación de lesividad es la siguiente: 
+
+  0 -> No se ha necesitado asistencia sanitaria.
+  
+  1 -> Se ha necesitado asistencia sanitaria. 
+
+```{r }
+accidentes <- accidentes %>% 
+                 mutate(lesividad = ifelse(lesividad =="01", "1", lesividad))
+
+accidentes <- accidentes %>% 
+                 mutate(lesividad = ifelse(lesividad =="02", "1", lesividad))
+accidentes <- accidentes %>% 
+                 mutate(lesividad = ifelse(lesividad =="03", "1", lesividad))
+accidentes <- accidentes %>% 
+                 mutate(lesividad = ifelse(lesividad =="04", "1", lesividad))
+accidentes <- accidentes %>% 
+                 mutate(lesividad = ifelse(lesividad =="05", "1", lesividad))
+accidentes <- accidentes %>% 
+                 mutate(lesividad = ifelse(lesividad =="06", "1", lesividad))
+accidentes <- accidentes %>% 
+                 mutate(lesividad = ifelse(lesividad =="07", "1", lesividad))
+accidentes <- accidentes %>% 
+                 mutate(lesividad = ifelse(lesividad =="14", "1", lesividad))
+
+accidentes <- accidentes %>% 
+                 mutate(lesividad = ifelse(lesividad =="0", "0", lesividad))
+
+```
+
+## Modelo Regresión Logística para explicar Lesividad 
+
+Se realiza el modelo de regresión logística sin incluir las variables que eliminamos anteriormente. Una vez realizado el glm se ha seguido con un stepAIC para poder obtener el modelo con las variables más significativas. Dicho modelo tiene en cuenta únicamente 3 variables: el Tipo de Accidente, Estado meteorológico y sexo. 
+
+```{r }
+model_rl <- glm(as.factor(lesividad) ~ estado_metereologico+sexo+tipo_accidente+tipo_persona + rango_edad,family=binomial(link=logit),data=accidentes)
+summary(model_rl) 
+```
+
+```{r}
+stepAIC(model_rl)
+```
+
+```{r include = TRUE}
+modelostep2 <- glm(as.factor(lesividad) ~ distrito+estado_metereologico + sexo + 
+    tipo_accidente, family = binomial(link = logit), data = accidentes)
+summary(modelostep2)
+
+```
+
+```{r}
+modelo_step <- glm(as.factor(lesividad) ~ estado_metereologico + sexo + 
+    tipo_accidente, family = binomial(link = logit), data = accidentes)
+summary(modelo_step)
+
+```
+
+A su vez, se ha comparado con el modelo nulo para así poder verificar que el modelo dado por stepAIC es el mejor, y efectivamente, todos los p-valor de las 3 variables son menores a 0.05, por lo que nos quedamos con el modelo dado por stepAIC. 
+
+```{r}
+modelo_rl_0 <- glm(as.factor(lesividad) ~ 1, family = binomial(link = logit), data = accidentes)
+anova(modelo_step, modelo_rl_0, test = "Chisq")
+
+```
+
+## Pseudo R2 McFadden:
+
+```{r}
+modelo_step <- glm(as.factor(accidentes$lesividad) ~ estado_metereologico + sexo + 
+    tipo_accidente, family = binomial(link = logit), data = accidentes)
+
+pR2(modelo_step)
+```
+
+McFadden = 0.29 lo cual indica que el modelo está bien ajustado, ya que se encuentra entre 0.2 y 0.4.
+
+## Curva ROC: 
+
+```{r}
+prob=predict(modelo_step,type=c("response"))
+accidentes$prob=prob
+
+
+g <- roc(as.factor(lesividad) ~ prob, data = accidentes) #AUC = 81% -> test bueno 
+g
+plot(g)
+```
+El AUC representa el área bajo la curva ROC y mide la calidad del modelo, en este caso es de 0.8187, indicando que el modelo tiene buena capacidad discriminante. Puede tomar valores entre el 0 y 1 siendo 1 diagnóstico perfecto y 0.5 sin capacidad discriminatoria. 
+
+```{r}
+fit.pred <- ifelse(modelo_step$fitted.values>0.5,1,0)
+tmodel<-table(fit.pred,accidentes$lesividad)
+tmodel
+```
+
+Observando la matriz de confusión, se puede detectar que este modelo tiene un total de falsos positivos de 4 y falsos negativos de 61, esto quiere decir que el modelo ha predicho 4 casos negativos que fueron clasificados incorrectamente como positivos y  ha predicho 61 casos positivos que fueron clasificados incorrectamente como negativos.  
+Este modelo tiene un acierto del 92.7%, es decir, clasifica correctamente al 92.7% de los registros.
+
+```{r}
+(tmodel[1,1]+tmodel[2,2])/sum(tmodel)
+```
+
+## LDA : Análisis Discriminante Lineal
+
+Para realizar el análisis discriminante lineal se han tenido en cuenta las variables más significativas. Al realizar la matriz de confusión, se puede observar que es la misma matriz que la obtenida en la regresión logística, es decir, el modelo ha predicho 4 casos negativos que fueron clasificados incorrectamente como positivos. El modelo tiene la misma precisión que el modelo anterior, es decir, un 92.7%.
+
+```{r}
+modelo_lda <- lda(lesividad ~estado_metereologico + sexo + 
+    tipo_accidente , data = accidentes)
+modelo_lda
+
+```
+
+
+```{r warning= FALSE}
+# Prediccion respuesta
+ldaResult <- predict(modelo_lda, newdata = accidentes) 
+# Matriz de confusion
+tldamod<-table(ldaResult$class, accidentes$lesividad) 
+tldamod
+```
+
+```{r}
+sum(diag(tldamod))/sum(tldamod) 
+```
+## Análisis Discriminante Cuadrático. QDA:
+
+### Pasar a numéricas las variables: 
+
+Para poder realizar los siguientes análisis es necesario pasar a numéricas todas las variables categóricas (tipo de accidente, estado meteorológico y sexo). Para ello se le otorgan distintos niveles a cada variable, es decir, para la variable estado meteorológico y tipo de accidente se le ha asignado en función de la gravedad de cada uno, dándole el valores de menor a mayor en función de la gravedad. 
+
+Por otro lado, a la variable sexo se le ha otorgado el valor 0 a aquellos que son desconocidos, 1 a Hombre y 2 a Mujer. 
+
+```{r}
+accidentes$estado_metereologico<-factor(accidentes$estado_metereologico, levels = c('Se desconoce','Despejado',"Nublado","Lluvia débil","Lluvia intensa","Granizado"), labels = c(0:5))
+
+accidentes$sexo<-factor(accidentes$sexo, levels = c('0','Hombre', "Mujer"), labels = c(0:2))
+
+accidentes$tipo_accidente<-factor(accidentes$tipo_accidente, levels = c("Atropello a animal","Alcance","Colisión fronto-lateral","Caída","Atropello a persona","Colisión lateral","Choque contra obstáculo fijo","Colisión frontal","Colisión múltiple","Otro"), labels = c(1:10))
+
+accidentes$lesividad<- as.integer(accidentes$lesividad)
+```
+
+```{r}
+accidentes$estado_metereologico<- as.numeric(accidentes$estado_metereologico)
+accidentes$sexo<-as.numeric(accidentes$sexo)
+accidentes$tipo_accidente<-as.numeric(accidentes$tipo_accidente)
+```
+
+
+### QDA: 
+
+Para realizar este modelo se han tenido en cuenta las variables más significativas. Al realizar la matriz de confusión de dicho modelo se puede observar que aumentan los números de falsos negativos en comparación con los modelos anteriores. A su vez, el grado de precisión ha disminuído a un 91.4% ( un 1.3% menor que los anteriores).
+
+```{r include = TRUE}
+str(accidentes)
+```
+
+```{r}
+qdamod <- qda(lesividad ~ estado_metereologico+sexo+tipo_accidente, data = accidentes) 
+qdamod
+```
+
+```{r warning=FALSE}
+qdresult <- predict(qdamod, newdata = accidentes)
+tqdamod <- table(qdresult$class, accidentes$lesividad)
+tqdamod
+
+```
+
+Este modelo tiene un total de 69 falsos negativos. El modelo ha predicho 0 casos negativos que fueron clasificados incorrectamente como positivos. 
+
+```{r}
+sum(diag(tqdamod))/sum(tqdamod) 
+
+```
+
+```{r}
+
+datos2<- accidentes[-c(1,2,3,6,7,10,11,12,13,14)]
+```
+
+```{r}
+datos2<-na.omit(datos2)
+datos2$lesividad<-as.factor(datos2$lesividad)
+partimat(datos2[,c(1,2,3)],datos2$lesividad,data=datos2,method="qda",main="Partition Plots") 
+
+```
+
+## LDA2 : Análisis Discriminante Lineal
+
+```{r include = TRUE}
+modelo_lda2 <- lda(lesividad ~., data = datos2)
+modelo_lda2
+```
+
+
+```{r warning= FALSE, include = TRUE}
+# Prediccion respuesta
+ldaResult2 <- predict(modelo_lda2, newdata = datos2) 
+# Matriz de confusion
+tldamod2<-table(ldaResult2$class, datos2$lesividad) 
+tldamod2
+```
+
+```{r include = TRUE}
+sum(diag(tldamod2))/sum(tldamod2) #Precision modelo  
+
+```
+
+# Naive Bayes
+
+```{r}
+modelo_bayes<- naiveBayes(lesividad ~ ., data = datos2) 
+modelo_bayes
+```
+
+```{r}
+prediccion1 <- predict(modelo_bayes, newdata=datos2, type = "raw")
+head(prediccion1)
+```
+
+```{r}
+prediccion11 <- predict(modelo_bayes, newdata=datos2, type = "class")
+matrizconfusion <- table(datos2$lesividad, prediccion11)
+matrizconfusion
+
+# Porcentaje de aciertos
+sum(diag(matrizconfusion))/sum(matrizconfusion)
+
+```
+
+Este modelo tiene un total de falsos positivos de 69 y no presenta falsos negativos. 
+
+
+## KNN  Y ARBOLES DE DECISION: 
+
+Previo a la realización de los modelos KNN y Árboles de Decisión, construimos un juego de datos de entrenamiento con el 70% de registros para construir los modelos y un juego de datos de pruebas con el 30% de registros restantes para validar los modelos.
+
+```{r}
+
+set.seed(1234)
+ind <- sample(2, nrow(datos2), replace=TRUE, prob=c(0.7, 0.3))
+trainData <- datos2[ind==1,]
+testData <- datos2[ind==2,]
+```
+
+### MODELO KNN:
+
+Aplicamos el modelo KNN, pasándole como parámetros la matriz de entrenamiento compuesta por las 3 variables pasadas a numéricas: estado metereológico, tipo de accidente y sexo. No le pasamos el campo lesividad porque precisamente es el campo que el algoritmo debe predecir.
+
+Dado que el modelo KNN permite replicar el modelo para n valores diferentes de k, repetimos el análisis para k=10,5y 4.
+
+```{r}
+# Aplicamos el algoritmo K-NN seleccionando 10 como k inicial
+KnnTestPrediccion_k1 <- knn(trainData[,1:4],testData[,1:4], trainData$lesividad , k = 10, prob = TRUE )
+# Visualizamos una matriz de confusión
+table ( testData$lesividad , KnnTestPrediccion_k1 )
+
+# Calculamos el % de aciertos para k=10
+sum(KnnTestPrediccion_k1 == testData$lesividad)/ length(testData$lesividad)*100
+```
+
+```{r}
+# Aplicamos el algoritmo K-NN seleccionando 5 como k inicial
+KnnTestPrediccion_k1 <- knn(trainData[,1:4],testData[,1:4], trainData$lesividad , k = 5, prob = TRUE )
+# Visualizamos una matriz de confusión
+table ( testData$lesividad , KnnTestPrediccion_k1 )
+
+# Calculamos el % de aciertos para k=1
+sum(KnnTestPrediccion_k1 == testData$lesividad)/ length(testData$lesividad)*100
+```
+
+```{r}
+# Aplicamos el algoritmo K-NN seleccionando 4 como k inicial
+KnnTestPrediccion_k1 <- knn(trainData[,1:4],testData[,1:4], trainData$lesividad , k = 4, prob = TRUE )
+# Visualizamos una matriz de confusión
+table ( testData$lesividad , KnnTestPrediccion_k1 )
+
+# Calculamos el % de aciertos para k=1
+sum(KnnTestPrediccion_k1 == testData$lesividad)/ length(testData$lesividad)*100
+```
+
+Una vez aplicados el algoritmo para k=10,5 y 4, mediante la matriz de confusión valoramos el nivel de acierto del modelo. Con dicho objetivo, estudiamos el % de acierto de cada uno de ellos con el objetivo de escoger el valor de k que permite obtener un % de clasificación correcta más alto:
+
+para k=10 el porcentaje de aciertos es 89%
+
+para k=5 el porcentaje de aciertos es 94%
+
+para k=4 el porcentaje de aciertos es 96%
+
+Tomamos el valor k=4 con un 96% de clasificación correcta. 
+
+
+### ÁRBOLES DE DECISIÓN: 
+
+Para construir un árbol de decisión es necesario definir una función que relaciona una variable categórica dependiente (factor) con n variables independientes. En nuestro caso son: 
+
+Una variable factor dependiente -> Lesividad
+3 variables independientes -> tipo de accidente, estado metereológico y sexo. 
+
+Se estudia primero la capacidad predictiva del árbol de decisión simple obtenido mediante el paquete rpart. 
+
+```{r}
+#ARBOLES DE DECISION 
+
+# Dividimos el fichero en 70% entreno y 30% validación  (parte recurrente en todo experimento)
+set.seed(1234)
+ind <- sample(2, nrow(datos2), replace=TRUE, prob=c(0.7, 0.3))
+trainData <- datos2[ind==1,]
+testData <- datos2[ind==2,]
+
+#Declaramos función del árbol
+ArbolRpart <- lesividad ~ tipo_accidente + estado_metereologico + sexo 
+
+#Aplicamos algoritmo
+ArbolRpart_ctree <- rpart(ArbolRpart, method="class", data=trainData)
+
+#Obtenemos la relación de reglas de asociación del árbol en formato listado
+print(ArbolRpart_ctree) # estadísticas detalladas de cada nodo
+
+
+```
+
+```{r}
+#Obtenemos el árbol con un diseño gráfico cuidado
+f13<-rpart.plot(ArbolRpart_ctree,extra=4) #visualizamos el árbol
+
+```
+
+```{r include = TRUE}
+f13
+```
+
+```{r}
+# Estudiamos la evolución del error a medida que el árbol va creciendo
+summary(ArbolRpart_ctree) # estadísticas detalladas de cada nodo
+```
+
+```{r}
+printcp(ArbolRpart_ctree) # estadísticas de resultados
+
+```
+
+```{r}
+# Validamos la capacidad de predicción del árbol con el fichero de validación
+testPredRpart <- predict(ArbolRpart_ctree, newdata = testData, type = "class")
+# Visualizamos una matriz de confusión
+table(testPredRpart, testData$lesividad)
+```
+
+```{r}
+sum(testPredRpart == testData$lesividad)/ length(testData$lesividad)*100
+
+```
+
+El árbol de decisión obtenido mediante el paquete rpart clasifica correctamente un 91.12% de los registros. Un resultado bastante alto y aceptable.
+
+Una vez construida una primera versión del árbol, estudiamos la viabilidad de un podado de árbol.
+
+```{r}
+# Podado del árbol
+pArbolRpart_ctree<- prune(ArbolRpart_ctree, cp= ArbolRpart_ctree$cptable[which.min(ArbolRpart_ctree$cptable[,"xerror"]),"CP"])
+  pArbolRpart_ctree<- prune(ArbolRpart_ctree, cp= 0.02)
+# Representación del árbol podado
+f14<-rpart.plot(pArbolRpart_ctree,extra=4) #visualizamos el árbol
+```
+```{r include = TRUE}
+f14
+```
+Dado que el árbol original es muy simple. El podado no devuelve ninguna versión nueva reducida.
+
+## CONCLUSIÓN: 
+
+Mediante la matriz de confusión valoramos el nivel de acierto del modelo. Con dicho objetivo, estudiamos el % de acierto de cada uno de ellos a fin de escoger aquel que permite obtener un % de clasificación correcta más alto. En este caso, una vez realizados los modelos se puede concluir que el modelo que presenta una mayor precisión es el modelo KNN con k = 4, el cual tiene un nivel de precisión del 96% y a su vez, dicho modelo no presenta ningún falso negativo, es decir, ningún registro ha sido clasificado como negativo cuando realmente era positivo.
+
+Además, tras las pruebas realizadas se concluye que las variables independientes que mejor explican el modelo y, por tanto, a la variable dependiente o endógena lesividad son estado meteorológico, sexo y tipo de accidente. 

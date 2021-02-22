@@ -1,0 +1,619 @@
+---
+title: "Examen 2020-2021"
+author: "Valentina Díaz Torres"
+date: "15/1/2021"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r librerias, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+library(readr)
+library(skimr)
+library(FactoMineR)
+library(factoextra)
+library(ggplot2)
+library(gplots)
+library(dplyr )
+library(graphics)
+library(corrplot)
+library(dplyr)
+library(gmodels)
+library(Hmisc)
+library(ggthemes)
+library(car)
+library(mctest)
+library(tidyverse)
+library(cluster)
+library("NbClust")
+require(clustertend)
+library(janitor)
+library(imputeTS)
+library(foreign)
+library(varhandle)
+require(fpc)
+library(tidyverse)
+library(stats)
+require(ggrepel)
+require(e1071)
+require(Rtsne)
+library(RWeka)
+library(gridExtra)
+
+
+  
+```
+
+## Objetivos e introducción.
+
+La presente práctica práctica consiste en un análisis de 15 variables recogidas acerca de 20.000 conductores, que recogen información tal como la intensidad media de conducción, la potencia de los coches, velocidad máxima a la que conducen, entre otras. 
+
+Se pretende, por un lado descubrir si existen posibles grupos o características comunes entre las variables uso diario del vehículo, recogidas bajo siete columnas del dataset que contienen información de los conductores sobre la intensidad del uso cada día de la semana. También, interesa estudiar si existe, por otro lado, relación entre las variables potencia, antigüedad de la licencia, velocidad máxima circulada, distancia recorrida y los registros diarios sobre el número de veces que mueven el coche los conductores. Por último, existen las variables sexo y siniestralidad, es decir, si ha existido o no algún siniestro. Respecto a estas dos últimas se pretende encontrar posibles intereses de cara al análisis objetivo. 
+
+Para todo lo anterior, en primer lugar se realizará una reducción de la dimensión del dataset, seleccionando solo las 15 variables que interesan estudiar, de las 57 que contiene. Una vez reducido este,se realiza un análisis exploratorio con el fin de buscar anomalías en los datos y poder hacer limpieza y preparación de los mismos. Tras ello, se realiza el análisis cluster empleando métodos no jerárquicos, ya que son los más adecuados debido a las dimensiones del dataset y las necesidades computacionales de los algoritmos jerárquicos. Se han realizado los algoritmo K medias, PAM, Clara y el de Segmentación borrosa (Fuzzy Clustering). No obstante, CLARA ha sido elegido como el algoritmo según el cual se van a extraer los datos para el análisis de las variables, quedando los otros tres como un apoyo para el mismo. Además, el número óptimo de grupos de conductores que se podían formar en cada uno de los análisis, tras varias pruebas ha sido de 2, en ambos casos. Es importante resaltar que las variables categóricas sexo y siniestralidad se han separado del análisis cluster para despúes compararlas con los resultados y buscar si realmente surge algún resultado importante, es decir si esta información puede aportarle un punto de vista interesante al análisis, mediante un análisis descriptivo.
+
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+
+## Carga de datos
+
+# Carga de datos como dataframe
+
+df = as.data.frame(read.spss("Ene21.sav"))
+
+#poner el id como índice, representando a cada columna
+
+df = data.frame(df[,-1],row.names=df[,1])
+
+#pasar todas las variables a minúscula, para que todas estén igual
+
+df = clean_names(df)
+
+# Reduccion de variables
+
+df_conductores = df[,c(3,5,7,9,11,20,21,36,37,38,39,40,41,42,51)]
+
+```
+
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+
+# Tratamiento de valores na's
+
+# Comprobar cuántos na's hay en cada columna
+
+apply(df_conductores, 2, function(x) {sum(is.na(x))})  
+
+# La única variable que contiene valores na es potencia. Se ha decidido que estos serán imputados por la media. También se podrían imputar por la mediana, pero en este caso podría ser engañoso, ya que estamos hablando de potencia, y habrá ciertos coches con mucha potencia que no tienen por qué representar al resto.
+
+df_conductores$potencia[is.na(df_conductores$potencia)]<-mean(df_conductores$potencia,na.rm=TRUE)
+skim(df_conductores) #comprobamos que ya no queda ningún valor na 
+``` 
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+# Separar el dataset en variables numéricas y categóricas
+
+df_conductores_num = df_conductores %>% select(is.numeric) #se mantienen 13 columnas
+head(df_conductores_num)
+
+df_conductores_cat = df_conductores %>% select("sexo", "sin_dicot")
+```
+
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+
+## Análisis exploratorio
+
+# Dimensión del dataset: 19.684 filas y 15 columnas
+
+dim(df_conductores) 
+
+# Principales estadísticos de las variables
+
+summary(df_conductores)
+
+# Mostrar el nombre de todas las variables existentes
+
+colnames(df_conductores)
+
+```
+
+
+Tras preparar los datos para trabajar con ellos, se ha decidido empezar por un análisis exploratorio, de modo gráfico, con el fin de, visualmente, observar la relación entre algunas variables pertinentes. En los siguientes gráficos se muestra la relación de siniestralidad y sexo con las variables velocidad, intensidad los lunes, intensidad los viernes y registros diarios. Los hallazgos encontrados son que, respecto al sexo, por lo general, se podría presuponer que las mujeres, en los datos estudiados, conducen a velocidad más moderada que los hombres, tienen potencia media en el coche y tienen más registros diarios entre 2 y 6 veces. Los hombres, son los únicos con registros a velocidad superior de 120 km/h, los únicos con potencia superior a 150 y de los que hay registros diarios de hasta 10 veces. Respecto a la intensidad según los días de la semana se ha pretendido comprobar si la intensidad era mayor finalizando o empezando la semana, que suele haber más tráfico y los siniestros que había estos días. Los resultados encontrados son bastante equitativos los dos días, aunque parece que los viernes hay más registros de mayor intensidad y más siniestralidad, aunque no es una diferencia muy significativa.
+
+
+```{r, warning=FALSE, echo=FALSE}
+#comprobar las variables sexo y siniestralidad con respecto a la variable velocidad
+
+vel_max_siniestro <- ggplot(data = df_conductores, aes(x = v_max_med, color = as.factor(sin_dicot))) + 
+  geom_histogram()
+
+vel_max_sexo <- ggplot(df_conductores, aes(v_max_med, fill=sexo)) +
+  geom_bar() +
+  scale_x_binned()
+
+grid.arrange(vel_max_sexo, vel_max_siniestro)
+#¿utilizan más el coche los hombres o las mujeres? ¿hay más posibilidad de siniestralidad?
+
+siniestro_usoDiario <- ggplot(data = df_conductores, aes(x = reg_dia, color = as.factor(sin_dicot))) + 
+  geom_histogram()
+
+usoDiario_sexo <- ggplot(df_conductores, aes(reg_dia, fill=sexo)) +
+  geom_bar() +
+  scale_x_binned()
+
+grid.arrange(usoDiario_sexo, siniestro_usoDiario)
+
+#¿Siniestralidad superior finalizando o empezando la semana?
+
+siniestro_viernes <- ggplot(df_conductores, aes(intensidad_v, fill = sin_dicot)) + 
+  geom_bar() +
+  scale_x_binned()
+
+siniestro_lunes <- ggplot(df_conductores, aes(intensidad_l,fill = sin_dicot)) +
+   geom_bar() +
+  scale_x_binned()
+
+#mostrar todos los gráficos juntos
+
+grid.arrange(siniestro_lunes, siniestro_viernes)
+```
+
+También, se ha representado la matriz de correlación, para observar si hay una relacion negativa o positiva entre las variables, en el caso de existir. Se ha encontrado que la intensidad en los días entre semana tiene una correlación altamente negativa con los sábados y domingos. Estos se explicaría porque hay mucho menos tráfico los fin de semana,  ya que, por lo general, menos personas van a trabajar en estos días. En cuanto a correlación positiva se podría destacar la de distancia media y velocidad media.
+
+
+```{r,warning=FALSE,echo=FALSE, warning=FALSE}
+#correlacion de las variables numericas
+
+correlacion = round(cor(df_conductores_num), 2)
+#representacion de la matriz de correlacion de las variables numericas del dataset
+corrplot(correlacion, "pie", "lower")
+
+```
+Es necesario también, hacer una análisis de los valores atípicos que pudiesen existir en el dataset. Se observan que la variable dist_med contiene muchos. No obstante, tras varios análisis, se ha decidido no eliminarlos, ya que se podría estar perdiendo mucha información, en este caso sobre la distancia media que recorren los conductores, hay algunos que podrían hacer un trayecto más largo.
+
+
+```{r,warning=FALSE,echo=FALSE, warning=FALSE}
+## Estudio de outliers
+
+# Boxplot
+
+boxplot(df_conductores_num, 
+        main = "outliers",
+        boxwex = 0.5,col="salmon")
+
+```
+Debido que en los objetivos de esta práctica se busca estudiar un conjunto de variables separadas, por un lado todas las de intensidad, en los 7 días de la semana, y por otro, el resto, se van a dividir en dos subgrupos, para realizar análisis cluster por separados. "c1" compondría el primer grupo y "c2" el segundo.
+
+Además, debido a que la base de datos está compuesta por cerca de 20.000 observaciones, en algunas casos puede resultar muy difícil calcular ciertas operaciones. Es por eso, que se han creado dos subgrupos más, compuestos por una muestra de 1000 observaciones del dataset. 
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+
+#Primeras 6 variables
+c1 = df_conductores_num[,c(0:6)]
+#Variables de intensidad
+c2 = df_conductores_num[,c(7:13)]
+#Subgrupos tipificados
+c1_tip = scale(c1)
+
+#calculo de muestra para casos en los que lo necesite
+
+c1_sample = c1[sample(1:nrow(c1), 1000, replace = FALSE),]
+c2_sample = c2[sample(1:nrow(c2), 1000, replace = FALSE),]
+c1_sample_tip = scale(c1_sample)
+
+```
+
+Si las variables presentan fuertes variaciones de rango o una alta variabilidad,sería necesario escalarlas. En este caso, vemos como las distintas variables de intensidad ya vienen escaladas, mientras que otras como , días circulados o distancia media no. Es por esto, que solo se van a escalar las del primer grupo.
+
+
+## Algoritmos y Análisis Cluster
+
+
+se realiza, mediante el estadístico Hopkins, una prueba para comprobar si tiene sentido o no hacer un análisis cluster y por tanto, si las variables se pueden agrupar entre ellas. El valor de este, debe ser lo más cercano a 0 para que el clustering tenga sentido, de ser próximo a 0.5, significaría que las variables son bastante homogéneas y que por tanto no se podrían agrupar. En ambos casos, el estadístico se encuentra muy por debajo del 0.5. No obstante, en el grupo de intensidad, este es menor (0.12 frente a 0.23 en el caso del primer grupo). Esto podría significar que entre estas variables de intensidad se pueden llevar a cabo dos grupos claramente más definidos, que en el caso de las otras variables. 
+
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+
+#Evaluamos la bondad del AC con el método de Hopkins: cuanto más cercano a cero, mejor capacidad de segmentación.
+# Aplicamos el estadístico sobre los datos reales
+set.seed(123)
+
+hopkins(c1_sample_tip, n = nrow(c1_sample)-1)
+# Bondad, sobre datos tipificados:
+bondad_c1 = get_clust_tendency(c1_sample_tip, 100)
+# Estadístico de Hopkins 
+bondad_c1$hopkins_stat
+
+```
+
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+set.seed(123)
+
+hopkins(c2_sample, n = nrow(c2_sample)-1)
+# Bondad, sobre datos tipificados:
+bondad_c2 = get_clust_tendency(c2_sample, 100)
+# Estadístico de Hopkins 
+bondad_c2$hopkins_stat
+```
+
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+
+## K medias
+
+## Primer grupo de variables
+
+#Es necesario resaltar que a lo largo de las operaciones se establecerá una semilla (set.seed(123)), con el fin de homogeneizar los resultados, ya que, especialmente, métodos no jerárquicos, son muy sensibles a ello, por lo que es necesario.
+
+set.seed(123) 
+
+km_1 = kmeans(c1, 2, nstart = 25)
+fviz_cluster(km_1, data=c1, labelsize=6, repel=TRUE) 
+# Comprobar el número de observaciones por las que está compuesto cada uno de los tres grupos
+km_1$size
+#Hacemos una tabla para conocer a qué grupo pertenece cada uno:
+
+table_1 = table(rownames(c1), km_1$cluster) # para 
+
+#obtener los centroides de cada grupo
+km_1$centers
+
+#presentar los grupos por pares de variables
+
+plot(c1, col = km_1$cluster, pch = 19, frame = FALSE,
+     main = "k medias, k =2")
+
+# Scatter plot 
+
+plot(c1_tip, 
+  col = km_1$cluster,
+  main = "k medias, k = 2",
+  xlab = "",
+  ylab = "")
+
+#Se observan tres grupos diferenciados, aunque hay bastante solapamiento entre ellos. Además, la calidad de la representación es baja, siendo esta de 49,9%. El tamaño de cada grupo es de, 15842 observaciones el primero y 3842 el segundo. Hay un grupo mucho más pequeño que el otro. Más tarde se comprobará si esto tiene o no sentido.
+
+```
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+
+## Segundo grupo de variables
+
+set.seed(123) 
+
+km_2 = kmeans(c2, 2, nstart = 25)
+fviz_cluster(km_2, data=c2, labelsize=6, repel=TRUE) 
+# Comprobar el número de observaciones por las que está compuesto cada uno de los tres grupos
+km_2$size
+#Hacemos una tabla para conocer a qué grupo pertenece cada uno:
+
+table_2 = table(rownames(c2), km_2$cluster) # para 
+head(table_2)
+#obtener los centroides de cada grupo
+km_2$centers
+#presentar los grupos por pares de variables
+
+plot(c2, col = km_2$cluster, pch = 19, frame = FALSE,
+     main = "k medias, k = 2")
+# Scatter plot 
+plot(c1_tip, 
+  col = km_2 $cluster,
+  main = "k medias, k = 2",
+  xlab = "",
+  ylab = "")
+
+#En este grupo, vemos cómo las dos agrupaciones se solapan menos en la representación, están más diferenciados los grupos. La calidad de la representación es del 63,2%, entre las dos dimensiones. El número de observaciones dentro de cada grupo también está más equilibrado siendo el primero de 12245 observaciones  y el segundo de 7439.
+
+```
+Como se ha dicho anteriormente, se han realizado cuatro algoritmos diferentes para analizar las variables, no obstante, debido a que unos son más adecuados que otros, se mostrarán solo dos de ellos. Por un lado, el algoritmo PAM (Partitioning Around Medoids), resuelve un problema principal del algoritmo k medias. La base de datos presente contiene un número importante de ouliers, como se ha decidido no modificarlos, es necesario elegir un algoritmo que corrija ese problema y que no sea muy sensible a ellos, como el k media lo es. El algoritmo PAM lo hace. Además, existe el algoritmo CLARA, que es muy similar a este anterior, pero trabaja con muestras, por lo que es perfecto para una base de datos de las dimensiones de la presente. Es por esto que este último será el elegido para hacer grupos entre las variables.
+
+### Algoritmo PAM (Partitioning Around Medoids)
+
+```{r, echo=FALSE, warning=FALSE}
+
+## Algoritmo PAM (Partitioning Around Medoids)
+
+
+## Primer grupo de datos
+
+set.seed(123)
+
+pam_1 = pam(c1, 2)
+#medioides de cada grupo
+pam_1$medoids
+#cluster al que pertenece cada observacion
+head(pam_1$cluster)
+
+clusplot(pam_1, main = "PAM de k = 2", color = TRUE)
+
+fviz_cluster(pam_1, data=c1, labelsize=2, repel=TRUE)
+
+```
+
+```{r, echo=FALSE, warning=FALSE}
+
+## Segundo grupo de datos
+set.seed(123)
+
+pam_2 = pam(c2, 2)
+#medioides de cada grupo
+pam_2$medoids
+#cluster al que pertenece cada observacion
+head(pam_2$cluster)
+
+clusplot(pam_2, main = "PAM de k = 2", color = TRUE)
+
+fviz_cluster(pam_2, data=c2, labelsize=2, repel=TRUE)
+
+# Gráfico silhouette
+
+```
+
+
+### Algoritmo CLARA (Clustering Large Applications)
+
+El algoritmo CLARA ha sido elegido como idóneo para trabajar con la base de datos actual. Esta está compuesta por un gran número de observaciones, por lo que algoritmos computacionalmente intensos son muy difíciles de aplicar, dado los recursos limitados. 
+
+Para este algortimo se usa una muestra de la base de datos. Esta ha sido establecida como 1000 observaciones, ya que es el valor que computacionalmente se adapta a las capacidades y recursos presentes.
+
+
+Antes de realizar el algoritmo final, CLARA, se calcula el número óptimo de clusters en cada grupo. Tras distintas pruebas, los resultados obtenidos han sido 2 en ambos casos. En las siguientes gráficas se puede observar en el "gráfico del codo". Además, se calcula la distancia euclídea entre las variables.
+
+
+```{r, echo=FALSE, warning=FALSE, warning=FALSE}
+
+#Gráfico del codo
+set.seed(123)
+
+#Primer grupo (c1)
+
+fviz_nbclust(c1, kmeans, method = "wss") +
+        geom_vline(xintercept = 2, linetype = 2)
+
+
+#Segundo gruppo (c2)
+fviz_nbclust(c2, kmeans, method = "wss") +
+        geom_vline(xintercept = 2, linetype = 2)
+
+```
+
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+# Cálculo de la distancia euclídea
+set.seed(123)
+
+#Comprobar distancias sobre variables c1
+dist.eucl_c1 = get_dist(c1, method = "euclidean",stand = TRUE)
+
+#Comprobar distancias sobre variables c2
+dist.eucl_c2 = get_dist(c2, method = "euclidean",stand = TRUE)
+
+
+```
+
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+# NbClust para saber el número óptimo de cluster. Es mejor realizar NbClust con una muestra, anteriormente establecida
+set.seed(123)
+
+nbc_c1 = NbClust(c1_sample_tip, distance = "euclidean", min.nc = 2, max.nc = 10, method = "complete", index ="all")
+nbc_c1
+
+```
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+
+set.seed(123)
+
+nbc_c2 = NbClust(c2_sample, distance = "euclidean", min.nc = 2, max.nc = 10, method = "complete", index ="all")
+nbc_c2
+
+```
+En el análisis clara del primer grupo la representación muestra que ambos grupos se solapan en cierto modo y que uno es mucho más grande que el otro. Además, la calidad de la representación no supera el 50%.
+
+
+```{r, echo=FALSE, warning=FALSE}
+
+## Primer grupo
+
+set.seed(123)
+c1_clara=clara(c1, k = 2, samples=200, metric = "manhattan", stand = TRUE , pamLike = TRUE)
+#Cluster plot
+fviz_cluster(c1_clara, stand = TRUE, geom = "point", pointsize = 1)
+#gráfico de silueta
+fviz_silhouette(silhouette(c1_clara))
+# Medioides
+c1_clara$medoids
+```
+En el caso de las variables de intensidad, hay dos grupos claramente definidos y diferenciados, siendo estos, también, más homogéneos en cuanto a tamaño. La calidad de la representación es bastante mejor que en el caso anterior.
+
+```{r, echo=FALSE, warning=FALSE}
+
+## Segundo grupo
+
+set.seed(123)
+c2_clara=clara(c2, k = 2, samples=200, metric = "manhattan", stand = TRUE , pamLike = TRUE)
+#Cluster plot
+fviz_cluster(c2_clara, stand = TRUE, geom = "point", pointsize = 1)
+#gráfico de silueta
+fviz_silhouette(silhouette(c2_clara))
+# Medioides
+c2_clara$medoids
+ 
+```
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+
+## Fuzzy clustering - Segmentación borrosa
+
+
+## Primer grupo
+set.seed(123)
+
+# Segmentación borrosa con 3 grupos
+fanny_c1 = fanny(c1, 2)
+
+# Representación
+clusplot(fanny_c1)
+
+fviz_cluster(fanny_c1, frame.type = "norm",frame.level = 0.68)
+
+# Gráfico de perfil
+fviz_silhouette(fanny_c1, label = TRUE)+
+        theme(axis.text.x = element_text(angle = 60, hjust = 1, size=6,color="black"))
+
+# Coeficiente de segmentación de Dunn 
+
+fanny_c1$coeff
+
+# Pertenencia
+fanny_c1$membership
+fanny_c1$clustering
+```
+
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+## Segundo grupo
+
+
+set.seed(123)
+
+# Segmentación borrosa con 3 grupos
+fanny_c2 = fanny(c2, 2)
+
+# Representación
+clusplot(fanny_c2)
+
+fviz_cluster(fanny_c2 ,frame.type = "norm",frame.level = 0.68)
+
+# Gráfico de perfil
+fviz_silhouette(fanny_c2, label = TRUE)+
+        theme(axis.text.x = element_text(angle = 60, hjust = 1, size=5,color="black"))
+
+# Coeficiente de segmentación de Dunn 
+
+fanny_c2$coeff
+
+# Pertenencia
+fanny_c2$membership
+fanny_c2$clustering
+```
+
+
+## Conclusiones
+
+Por último, se ponen en relación, a modo de conclusión todas las variables y los grupos que se han formado, con el fin de analizar similaridades y conocer qué variables componen cada grupo y qué características tienen estos.
+
+Respecto a las variables sexo y siniestralidad, además de lo ya comentado al inicio de la práctica, se ha comprobado que el número total de hombres estudiados es de 10473 y el de mujeres 9211. Además, hay 10057 casos que no han sido siniestro y 9627, por lo que los datos están bastante equilibrados y hay un alto caso de siniestros, en comparación con los no siniestros.
+
+En el primer conjunto de variables, encontramos que, en el primer cluster se encuentran 12.246 conductores y en el segundo 7438. Respecto al cojunto de variables de intensidad, el primer grupo lo componen 11.653 conductores y el segundo 8.031, estando este segundo conjunto más equilibrado. Respecto al número de mujeres, en el primer cluster el número de mujeres es inferior en los dos clusters, en el grupo de intensidad el la diferencia es menor, aunque también hay más hombres.
+
+
+Además, en el primer grupo hay 5842 mujeres y 6404	hombres en el primer cluster y 3369	mujeres y 4069 en el segundo. En el grupo de variables de intensidad existen. En el grupo de intensidad 5824 mujeres y 5829 hombres en el primer cluster y 3387 muejres y 4644 hombres en el segundo. Entre las características, en el primer grupo, una vez que se han analizado ambos clusters, no se encuentran muchas diferencia entre hombres y mujeres.
+
+En el caso de la siniestralidad, el análisis parece cobrar más sentido, ya que se denota cierta diferencia en los máximos y mínimos de cada variable, que indican que los conductores con siniestros, suelen hacer más recorrido diario, su distancia media es mayor, la velocidad y la potencia es algo más alta y circulan más días, lo cual tendría sentido, teniendo en cuenta que a mayor velocidad y más distancia recorrida, más probabilidad de un siniestro. 
+
+
+En conclusión, del grupo formado por las variables de intensidad, se ha podido extraer los hallazgos más relevantes del análisis, se han formado clusters más diferenciados y por tanto se ha visto como hay dos claros grupos, los conductores de entre semana, seguramente de trabajo y los de fin de semana. El grupo primero, está compuesto por carácterísticas diferentes, las cuales algunas han podido tomar relación con variables pero otras no. El sexo, por lo general no ha aportado mucha información, no hay una clara diferencia entre conductores hombres y mujeres, pero sin embargo la siniestralidad sí estaba más relacionada con las otras variables.
+
+```{r, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+
+# guardar en un objeto cada cluster obtenido de clara
+cluster_1 = c1_clara$cluster
+cluster_2 = c2_clara$cluster
+#Numero de conductores en cada grupo por cluster
+table(cluster_1)
+table(cluster_2)
+#unir todos los datos en una tabla
+data_clust<- cbind(c1,c2,cluster_1, cluster_2, sexo = df_conductores$sexo, siniestralidad = df_conductores$sin_dicot)
+head(data_clust)
+
+
+```
+
+```{r filtrado, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+##Filtrado
+
+
+#numero de hombres y de mujeres | mujer=1/hombre=2
+table(data_clust$sexo)
+#numero de siniestros y no siniestros
+table(data_clust$siniestralidad)
+
+##Sexo
+
+# En el cluster 1 del primer grupo hay 5842	mujeres y 6404	hombres
+M_cl_1 <- filter(data_clust, cluster_1==1, sexo=="Mujer")
+H_cl_1 <- filter(data_clust, cluster_1==1, sexo=="Hombre")
+count(M_cl_1)
+count(H_cl_1)
+#En el segundo cluster hay 
+M_cl_2 <- filter(data_clust, cluster_1==2, sexo=="Mujer")
+H_cl_2 <- filter(data_clust, cluster_1==2, sexo=="Hombre")
+count(M_cl_2)
+count(H_cl_2)
+#primer cluster de intensidad
+M_cl_3 <- filter(data_clust, cluster_2==1, sexo=="Mujer")
+H_cl_4 <- filter(data_clust, cluster_2==1, sexo=="Hombre")
+count(M_cl_3)
+count(H_cl_4)
+#segundo cluster de intensidad
+M_cl_5 <- filter(data_clust, cluster_2==2, sexo=="Mujer")
+H_cl_6 <- filter(data_clust, cluster_2==2, sexo=="Hombre")
+count(M_cl_5)
+count(H_cl_6)
+
+## siniestralidad
+
+#siniestralidad cluster 1 grupo 1 -->  6261 siniestros y  no 4069
+S_cl_1 <- filter(data_clust, cluster_1==1, siniestralidad=="Sí")
+S_cl_2 <- filter(data_clust, cluster_1==1, siniestralidad=="No")
+count(S_cl_1)
+count(S_cl_2)
+
+#siniestralidad cluster 2 grupo 1 --> 3366 siniestros y 5829 no 
+S_cl_3 <- filter(data_clust, cluster_1==2, siniestralidad=="Sí")
+S_cl_4 <- filter(data_clust, cluster_1==2, siniestralidad=="No")
+count(S_cl_3)
+count(S_cl_4)
+
+
+#siniestralidad cluster 1 grupo 2 --> 5650 siniestros y 4069 no 
+S_cl_5 <- filter(data_clust, cluster_2==1, siniestralidad=="Sí")
+S_cl_6 <- filter(data_clust, cluster_2==1, siniestralidad=="No")
+count(S_cl_1)
+count(S_cl_2)
+
+#siniestralidad cluster 2 grupo 2 --> 3977 si, 5829 no
+S_cl_7 <- filter(data_clust, cluster_2==2, siniestralidad=="Sí")
+S_cl_8 <- filter(data_clust, cluster_2==2, siniestralidad=="No")
+count(S_cl_7)
+count(S_cl_8)
+```
+
+
+```{r caracteristicas, include=FALSE, message=FALSE, echo=FALSE, warning=FALSE}
+# Características
+
+summary(M_cl_1)
+summary(H_cl_1)
+summary(M_cl_2)
+summary(H_cl_2)
+summary(M_cl_3)
+summary(H_cl_4)
+summary(M_cl_5)
+summary(H_cl_6)
+
+#siniestros
+
+summary(S_cl_1)
+summary(S_cl_2)
+summary(S_cl_3)
+summary(S_cl_4)
+summary(S_cl_5)
+summary(S_cl_6)
+summary(S_cl_7)
+summary(S_cl_8)
+```
